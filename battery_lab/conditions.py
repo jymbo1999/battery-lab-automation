@@ -40,6 +40,9 @@ def condition_column(name: str) -> str:
     aliases = {
         "참고": "reference",
         "전해질": "electrolyte",
+        "날짜": "date",
+        "일자": "date",
+        "측정일": "date",
         "종류": "cell_type",
         "cell": "cell_id",
         "cell_name": "cell_id",

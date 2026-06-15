@@ -12,6 +12,7 @@
 - Voltage profile: 선택 cycle별 capacity-voltage 곡선
 - EIS: Z' vs -Z'' Nyquist plot, rough Rs/Rct screening
 - HTML 리포트와 `summary_metrics.csv` 자동 생성
+- 업로드 날짜/조건표 날짜 기준의 날짜별 실험 일지 자동 생성
 - Streamlit 한글 인터페이스 준비
 
 ## 바로 실행
@@ -34,6 +35,20 @@ battery_visual_outputs/
 ├─ summary_metrics.csv
 └─ report.html
 ```
+
+기본 실행 시 날짜별 일지도 함께 생성됩니다.
+
+```text
+lab_journal/
+├─ index.html
+├─ journal_manifest.csv
+└─ 2026-06-15/
+   ├─ dashboard.html
+   ├─ report.html
+   └─ summary_metrics.csv
+```
+
+일지 폴더를 바꾸려면 `--journal my_journal`, 일지 생성을 끄려면 `--no-journal`를 사용합니다.
 
 ## 참고자료에서 확인한 실제 형식
 
@@ -70,6 +85,8 @@ EIS XLSX:
 python3 -m pip install -r requirements.txt
 streamlit run app.py
 ```
+
+앱에서는 파일 업로드 후 `대시보드 미리보기`가 바로 열리고, `날짜별 실험 일지 생성`을 켜 둔 상태라면 같은 실행 결과가 `lab_journal/index.html`에도 날짜별로 정리됩니다.
 
 ## 주의
 
