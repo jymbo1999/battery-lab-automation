@@ -1,0 +1,2 @@
+cell_id,sample,batch,cell_no,date,areal_mass_density,electrode_density,electrolyte,binder,voltage_range,ratio,note
+1.5act_3T_1,activated carbon coated graphite,3T,1,2026-06-15,4.83,1.41,standard electrolyte,PVDF,0.005-1.5 V,95:2:3,Demo condition row

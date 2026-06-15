@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>배터리 실험 리포트</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root { color-scheme: light; --ink: #1f2933; --muted: #697586; --line: #d7dde4; --panel: #f7f9fb; --accent: #256f7b; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: white; }
+    header { padding: 28px 36px 18px; border-bottom: 1px solid var(--line); background: var(--panel); }
+    h1 { margin: 0 0 10px; font-size: 28px; letter-spacing: 0; }
+    h2 { margin: 0; font-size: 18px; letter-spacing: 0; }
+    h3 { margin: 18px 0 8px; font-size: 14px; letter-spacing: 0; }
+    main { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 390px), 1fr)); gap: 18px; padding: 24px 36px 44px; max-width: 100%; }
+    .summary { padding: 14px 0 0; margin: 0; display: grid; gap: 5px; }
+    .card { border: 1px solid var(--line); border-radius: 8px; padding: 16px; overflow: hidden; }
+    .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .card-head span { color: white; background: var(--accent); border-radius: 999px; padding: 3px 10px; font-size: 12px; }
+    .source { color: var(--muted); margin: 5px 0 12px; font-size: 13px; }
+    img { width: 100%; max-height: 430px; object-fit: contain; border: 1px solid var(--line); border-radius: 6px; background: white; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+    th, td { border-bottom: 1px solid var(--line); padding: 6px 4px; text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; width: 52%; }
+    ul { margin: 0 0 0 18px; padding: 0; color: var(--ink); }
+    @media (max-width: 640px) {
+      header { padding: 22px 18px 16px; }
+      main { padding: 18px; }
+      .card { padding: 12px; }
+      table { font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>배터리 실험 자동 리포트</h1>
+    <ul class="summary"><li>총 8개 파일, 4개 셀을 처리했습니다.</li><li>capacity: 1, eis: 6, voltage_profile: 1</li><li>가장 높은 ICE: 443_pure_GF_4T_0.5C_003 (95.718%).</li><li>가장 낮은 rough Rct: 1.5act_3T_1 (202.03907 ohm).</li><li>파서 경고가 있는 파일 1개는 확인이 필요합니다.</li><li>1.5act_3T_1 vs 1.5act_3T_1_03: 비교 가능 - Areal mass density 차이 0.00 mg/cm2.</li><li>1.5act_3T_1 vs 430_1.5_act_6T_0.1C_015: 비교 주의 - Areal mass density 차이 7.62 mg/cm2.</li><li>1.5act_3T_1 vs 443_pure_GF_4T_0.5C_003: 비교 주의 - binder 불일치, ratio 불일치.</li><li>1.5act_3T_1_03 vs 430_1.5_act_6T_0.1C_015: 비교 주의 - Areal mass density 차이 7.62 mg/cm2.</li><li>1.5act_3T_1_03 vs 443_pure_GF_4T_0.5C_003: 비교 주의 - binder 불일치, ratio 불일치.</li><li>430_1.5_act_6T_0.1C_015 vs 443_pure_GF_4T_0.5C_003: 비교 주의 - Areal mass density 차이 6.75 mg/cm2, binder 불일치, ratio 불일치.</li></ul>
+  </header>
+  <main>
+    
+            <section class="card">
+              <div class="card-head">
+                <h2>1.5act_3T_1</h2>
+                <span>EIS</span>
+              </div>
+              <p class="source">1.5act 3T_1_0hr.xlsx</p>
+              <img src="eis/1.5act_3T_1__1.5act_3T_1_0hr.xlsx.svg" alt="1.5act 3T_1_0hr.xlsx graph">
+              <h3>셀 조건</h3><table><tr><th>Sample</th><td>1.5 act 3T</td></tr><tr><th>Date</th><td>260521</td></tr><tr><th>Areal mass density (mg/cm2)</th><td>7.191946620084263</td></tr><tr><th>Binder</th><td>2wt%cmc/40wt%SBR</td></tr><tr><th>Voltage range</th><td>0.01~2V</td></tr><tr><th>Ratio</th><td>0.95</td></tr></table>
+              <table><tr><th>fitting_method</th><td>circle_rough</td></tr><tr><th>rct_auto</th><td>202.03907</td></tr><tr><th>rct_span</th><td>82.64536</td></tr><tr><th>rows</th><td>81</td></tr><tr><th>rs_auto</th><td>1.61673</td></tr><tr><th>semicircle_quality</th><td>0.9204</td></tr><tr><th>valid_points</th><td>72</td></tr></table>
+              <h3>자동 해석 / 주의사항</h3>
+              <ul><li>규칙 기반 경고 없음.</li></ul>
+            </section>
+            
+            <section class="card">
+              <div class="card-head">
+                <h2>1.5act_3T_1_03</h2>
+                <span>EIS</span>
+              </div>
+              <p class="source">1.5act 3T_1_0hr_03.SDE</p>
+              
+              <h3>셀 조건</h3><table><tr><th>Sample</th><td>1.5 act 3T</td></tr><tr><th>Date</th><td>260521</td></tr><tr><th>Areal mass density (mg/cm2)</th><td>7.191946620084263</td></tr><tr><th>Binder</th><td>2wt%cmc/40wt%SBR</td></tr><tr><th>Voltage range</th><td>0.01~2V</td></tr><tr><th>Ratio</th><td>0.95</td></tr></table>
+              <table><tr><th>rows</th><td>0</td></tr><tr><th>valid_points</th><td>0</td></tr></table>
+              <h3>자동 해석 / 주의사항</h3>
+              <ul><li>Binary SDE file detected. Export to XLSX/CSV or add a vendor SDE parser for direct import. No parseable rows.</li></ul>
+            </section>
+            
+            <section class="card">
+              <div class="card-head">
+                <h2>1.5act_3T_1</h2>
+                <span>EIS</span>
+              </div>
+              <p class="source">1.5act 3T_1_12hr.xlsx</p>
+              <img src="eis/1.5act_3T_1__1.5act_3T_1_12hr.xlsx.svg" alt="1.5act 3T_1_12hr.xlsx graph">
+              <h3>셀 조건</h3><table><tr><th>Sample</th><td>1.5 act 3T</td></tr><tr><th>Date</th><td>260521</td></tr><tr><th>Areal mass density (mg/cm2)</th><td>7.191946620084263</td></tr><tr><th>Binder</th><td>2wt%cmc/40wt%SBR</td></tr><tr><th>Voltage range</th><td>0.01~2V</td></tr><tr><th>Ratio</th><td>0.95</td></tr></table>
+              <table><tr><th>fitting_method</th><td>circle_rough</td></tr><tr><th>rct_auto</th><td>231.89897</td></tr><tr><th>rct_span</th><td>127.17064</td></tr><tr><th>rows</th><td>81</td></tr><tr><th>rs_auto</th><td>2.1342</td></tr><tr><th>semicircle_quality</th><td>0.9091</td></tr><tr><th>valid_points</th><td>72</td></tr></table>
+              <h3>자동 해석 / 주의사항</h3>
+              <ul><li>규칙 기반 경고 없음.</li></ul>
+            </section>
+            
+            <section class="card">
+              <div class="card-head">
+                <h2>1.5act_3T_1</h2>
+                <span>EIS</span>
+              </div>
+              <p class="source">1.5act 3T_1_24hr.xlsx</p>
+              <img src="eis/1.5act_3T_1__1.5act_3T_1_24hr.xlsx.svg" alt="1.5act 3T_1_24hr.xlsx graph">
+              <h3>셀 조건</h3><table><tr><th>Sample</th><td>1.5 act 3T</td></tr><tr><th>Date</th><td>260521</td></tr><tr><th>Areal mass density (mg/cm2)</th><td>7.191946620084263</td></tr><tr><th>Binder</th><td>2wt%cmc/40wt%SBR</td></tr><tr><th>Voltage range</th><td>0.01~2V</td></tr><tr><th>Ratio</th><td>0.95</td></tr></table>
+              <table><tr><th>fitting_method</th><td>circle_rough</td></tr><tr><th>rct_auto</th><td>234.59585</td></tr><tr><th>rct_span</th><td>126.33233</td></tr><tr><th>rows</th><td>81</td></tr><tr><th>rs_auto</th><td>2.15575</td></tr><tr><th>semicircle_quality</th><td>0.909</td></tr><tr><th>valid_points</th><td>72</td></tr></table>
+              <h3>자동 해석 / 주의사항</h3>
+              <ul><li>규칙 기반 경고 없음.</li></ul>
+            </section>
+            
+            <section class="card">
+              <div class="card-head">
+                <h2>1.5act_3T_1</h2>
+                <span>EIS</span>
+              </div>
+              <p class="source">1.5act 3T_1_3hr.xlsx</p>
+              <img src="eis/1.5act_3T_1__1.5act_3T_1_3hr.xlsx.svg" alt="1.5act 3T_1_3hr.xlsx graph">
+              <h3>셀 조건</h3><table><tr><th>Sample</th><td>1.5 act 3T</td></tr><tr><th>Date</th><td>260521</td></tr><tr><th>Areal mass density (mg/cm2)</th><td>7.191946620084263</td></tr><tr><th>Binder</th><td>2wt%cmc/40wt%SBR</td></tr><tr><th>Voltage range</th><td>0.01~2V</td></tr><tr><th>Ratio</th><td>0.95</td></tr></table>
+              <table><tr><th>fitting_method</th><td>circle_rough</td></tr><tr><th>rct_auto</th><td>216.31311</td></tr><tr><th>rct_span</th><td>122.81725</td></tr><tr><th>rows</th><td>81</td></tr><tr><th>rs_auto</th><td>1.70024</td></tr><tr><th>semicircle_quality</th><td>0.9016</td></tr><tr><th>valid_points</th><td>72</td></tr></table>
+              <h3>자동 해석 / 주의사항</h3>
+              <ul><li>규칙 기반 경고 없음.</li></ul>
+            </section>
+            
+            <section class="card">
+              <div class="card-head">
+                <h2>1.5act_3T_1</h2>
+                <span>EIS</span>
+              </div>
+              <p class="source">1.5act 3T_1_6hr.xlsx</p>
+              <img src="eis/1.5act_3T_1__1.5act_3T_1_6hr.xlsx.svg" alt="1.5act 3T_1_6hr.xlsx graph">
+              <h3>셀 조건</h3><table><tr><th>Sample</th><td>1.5 act 3T</td></tr><tr><th>Date</th><td>260521</td></tr><tr><th>Areal mass density (mg/cm2)</th><td>7.191946620084263</td></tr><tr><th>Binder</th><td>2wt%cmc/40wt%SBR</td></tr><tr><th>Voltage range</th><td>0.01~2V</td></tr><tr><th>Ratio</th><td>0.95</td></tr></table>
+              <table><tr><th>fitting_method</th><td>circle_rough</td></tr><tr><th>rct_auto</th><td>225.02879</td></tr><tr><th>rct_span</th><td>130.86979</td></tr><tr><th>rows</th><td>81</td></tr><tr><th>rs_auto</th><td>1.66125</td></tr><tr><th>semicircle_quality</th><td>0.9023</td></tr><tr><th>valid_points</th><td>72</td></tr></table>
+              <h3>자동 해석 / 주의사항</h3>
+              <ul><li>규칙 기반 경고 없음.</li></ul>
+            </section>
+            
+            <section class="card">
+              <div class="card-head">
+                <h2>430_1.5_act_6T_0.1C_015</h2>
+                <span>Voltage profile</span>
+              </div>
+              <p class="source">430_1.5 act_6T_0.1C_015_Cycle.csv</p>
+              <img src="voltage_profile/430_1.5_act_6T_0.1C_015__430_1.5_act_6T_0.1C_015_Cycle.csv.svg" alt="430_1.5 act_6T_0.1C_015_Cycle.csv graph">
+              <h3>셀 조건</h3><table><tr><th>Sample</th><td>1.5 act_6T_1</td></tr><tr><th>Date</th><td>260430</td></tr><tr><th>Areal mass density (mg/cm2)</th><td>14.810605326480466</td></tr><tr><th>Binder</th><td>2wt%cmc/40wt%SBR</td></tr><tr><th>Voltage range</th><td>0.01~2V</td></tr><tr><th>Ratio</th><td>0.95</td></tr></table>
+              <table><tr><th>profile_capacity_1</th><td>317.5082</td></tr><tr><th>profile_capacity_10</th><td>276.5032</td></tr><tr><th>profile_capacity_2</th><td>316.254</td></tr><tr><th>profile_capacity_20</th><td>257.874</td></tr><tr><th>rows</th><td>22056</td></tr><tr><th>valid_points</th><td>22056</td></tr></table>
+              <h3>자동 해석 / 주의사항</h3>
+              <ul><li>규칙 기반 경고 없음.</li></ul>
+            </section>
+            
+            <section class="card">
+              <div class="card-head">
+                <h2>443_pure_GF_4T_0.5C_003</h2>
+                <span>Capacity</span>
+              </div>
+              <p class="source">443_pure GF 4T_0.5C_003_Capacity.csv</p>
+              <img src="capacity/443_pure_GF_4T_0.5C_003__443_pure_GF_4T_0.5C_003_Capacity.csv.svg" alt="443_pure GF 4T_0.5C_003_Capacity.csv graph">
+              <h3>셀 조건</h3><table><tr><th>Sample</th><td>pure GF 964_4T_1</td></tr><tr><th>Date</th><td>260610</td></tr><tr><th>Areal mass density (mg/cm2)</th><td>8.05705983908411</td></tr><tr><th>Binder</th><td>2wt%cmc</td></tr><tr><th>Voltage range</th><td>0.01~2V</td></tr><tr><th>Ratio</th><td>0.96</td></tr><tr><th>메모</th><td>No SBR</td></tr></table>
+              <table><tr><th>ce_mean</th><td>99.8618</td></tr><tr><th>ce_std</th><td>0.29</td></tr><tr><th>cycle_to_80</th><td>11</td></tr><tr><th>fade_slope</th><td>-0.365576</td></tr><tr><th>first_discharge_capacity</th><td>364.7774</td></tr><tr><th>ice_percent</th><td>95.718</td></tr><tr><th>last_cycle</th><td>310</td></tr><tr><th>last_discharge_capacity</th><td>29.0653</td></tr><tr><th>max_discharge_capacity</th><td>364.7774</td></tr><tr><th>retention@100</th><td>15.247</td></tr><tr><th>retention@300</th><td>8.177</td></tr><tr><th>retention@50</th><td>19.658</td></tr><tr><th>rows</th><td>310</td></tr><tr><th>valid_points</th><td>310</td></tr></table>
+              <h3>자동 해석 / 주의사항</h3>
+              <ul><li>Retention@100이 80% 미만입니다 (15.2%).</li></ul>
+            </section>
+            
+  </main>
+</body>
+</html>

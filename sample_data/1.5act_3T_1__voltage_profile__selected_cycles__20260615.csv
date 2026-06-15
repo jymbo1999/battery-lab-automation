@@ -1,0 +1,15 @@
+cycle,capacity,voltage,direction
+1,0,0.02,discharge
+1,100,0.08,discharge
+1,200,0.14,discharge
+1,300,0.32,discharge
+1,365,1.45,discharge
+10,0,0.03,discharge
+10,100,0.10,discharge
+10,200,0.18,discharge
+10,300,0.48,discharge
+10,362,1.46,discharge
+100,0,0.04,discharge
+100,100,0.16,discharge
+100,200,0.34,discharge
+100,312,1.45,discharge
