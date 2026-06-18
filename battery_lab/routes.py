@@ -101,19 +101,19 @@ def files():
     roots = {
         "EIS": {
             "status": _path_status(BATTERY_EIS_ROOT),
-            "items": _top_level_items(BATTERY_EIS_ROOT),
+            "entries": _top_level_items(BATTERY_EIS_ROOT),
         },
         "Capacity": {
             "status": _path_status(BATTERY_CAPACITY_ROOT),
-            "items": _top_level_items(BATTERY_CAPACITY_ROOT),
+            "entries": _top_level_items(BATTERY_CAPACITY_ROOT),
         },
         "Outputs": {
             "status": _path_status(BATTERY_OUTPUT_ROOT),
-            "items": _top_level_items(BATTERY_OUTPUT_ROOT),
+            "entries": _top_level_items(BATTERY_OUTPUT_ROOT),
         },
         "Project_Abstract": {
             "status": _path_status(BATTERY_CONDITION_WORKBOOK.parent),
-            "items": _top_level_items(BATTERY_CONDITION_WORKBOOK.parent),
+            "entries": _top_level_items(BATTERY_CONDITION_WORKBOOK.parent),
         },
     }
     return render_template("battery_lab/files.html", roots=roots)
