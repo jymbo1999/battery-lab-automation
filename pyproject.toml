@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "battery-lab-automation"
+version = "0.1.0"
+description = "Battery Lab Flask integration and analysis tools"
+requires-python = ">=3.10"
+dependencies = [
+  "Flask",
+  "pandas",
+  "numpy",
+  "scipy",
+  "matplotlib",
+  "plotly",
+  "openpyxl",
+  "python-dateutil",
+]
+
+[tool.setuptools]
+packages = ["battery_lab"]
+
+[tool.setuptools.package-data]
+battery_lab = ["templates/battery_lab/*.html"]

@@ -1,0 +1,43 @@
+{% extends "layouts/base.html" %}
+
+{% block title %} Battery Lab {% endblock %}
+
+{% block content %}
+<div class="content-wrapper">
+  <div class="row">
+    <div class="col-12">
+      <h3>Battery Lab</h3>
+      <p>Render Persistent Disk의 배터리 데이터 연결 상태입니다.</p>
+
+      <div class="card">
+        <div class="card-body">
+          <h4 class="card-title">Data Roots</h4>
+          <table class="table table-bordered">
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>Path</th>
+                <th>Exists</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for key, item in status.items() %}
+              <tr>
+                <td>{{ key }}</td>
+                <td><code>{{ item.path }}</code></td>
+                <td>{{ item.exists }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+
+          <p class="mt-3">
+            <a href="/battery/health" class="btn btn-sm btn-primary">Health JSON</a>
+            <a href="/battery/files" class="btn btn-sm btn-secondary">Files</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock content %}

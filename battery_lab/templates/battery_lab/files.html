@@ -1,0 +1,53 @@
+{% extends "layouts/base.html" %}
+
+{% block title %} Battery Files {% endblock %}
+
+{% block content %}
+<div class="content-wrapper">
+  <div class="row">
+    <div class="col-12">
+      <h3>Battery Files</h3>
+      <p>각 root의 top-level 항목만 최대 50개 표시합니다. Recursive scan은 하지 않습니다.</p>
+
+      {% for name, data in roots.items() %}
+      <div class="card mb-4">
+        <div class="card-body">
+          <h4 class="card-title">{{ name }}</h4>
+          <p>
+            Path: <code>{{ data.status.path }}</code><br>
+            Exists: {{ data.status.exists }}
+          </p>
+
+          <table class="table table-sm table-bordered">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Dir</th>
+                <th>Size</th>
+                <th>Modified</th>
+                <th>Path</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in data.items %}
+              <tr>
+                <td>{{ item.name }}</td>
+                <td>{{ item.is_dir }}</td>
+                <td>{{ item.size_bytes }}</td>
+                <td>{{ item.mtime }}</td>
+                <td><code>{{ item.path }}</code></td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="5">No items or root not found.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock content %}
