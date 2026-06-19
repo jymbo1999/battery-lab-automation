@@ -15,6 +15,33 @@
 - 업로드 날짜/조건표 날짜 기준의 날짜별 실험 일지 자동 생성
 - Streamlit 한글 인터페이스 준비
 
+## 운영 구조
+
+Battery Lab의 본체는 `battery_lab` pip 패키지입니다. Streamlit 앱(`app.py`), Flask 단독 실행(`battery_lab.flask_app`), 외부 Flask/iChart 앱 통합은 모두 이 패키지의 서비스와 렌더링 함수를 호출해야 합니다.
+
+같은 기능을 Streamlit용/Flask용으로 복사해서 따로 유지하지 않습니다. 그래프 파싱, matching override JSON, condition workbook, output 경로, EIS/Capacity viewer payload는 `battery_lab/config.py`와 `battery_lab` 서비스 레이어를 기준으로 한 번만 수정합니다.
+
+외부 Flask 앱에서는 패키지를 설치한 뒤 앱 초기화 코드에서 아래처럼 등록합니다.
+
+```python
+from battery_lab import register_battery_lab
+
+register_battery_lab(app)
+```
+
+Render나 단독 Flask 서버에서 이 repo 자체를 실행할 때는 패키지 제공 WSGI 앱을 씁니다.
+
+```bash
+python3 -m pip install -r requirements.txt
+gunicorn 'battery_lab.flask_app:app'
+```
+
+repo 루트 배포를 선호하면 동일하게 아래 엔트리도 사용할 수 있습니다.
+
+```bash
+gunicorn wsgi:app
+```
+
 ## 바로 실행
 
 ```bash

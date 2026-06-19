@@ -18,7 +18,11 @@ def env_int(name: str, default: int, *, minimum: int | None = None, maximum: int
     return value
 
 
-BATTERY_DATA_ROOT = Path(os.getenv("BATTERY_DATA_ROOT", "/var/data/battery"))
+# Default to the project root (the parent of the battery-lab-automation package),
+# where the data folders (EIS, capacity, Project_Abstract, ...) actually live.
+# Override with the BATTERY_DATA_ROOT env var for other deployments.
+_PROJECT_ROOT_DEFAULT = Path(__file__).resolve().parents[2]
+BATTERY_DATA_ROOT = Path(os.getenv("BATTERY_DATA_ROOT", str(_PROJECT_ROOT_DEFAULT)))
 BATTERY_EIS_ROOT = Path(os.getenv("BATTERY_EIS_ROOT", str(BATTERY_DATA_ROOT / "EIS")))
 BATTERY_CAPACITY_ROOT = Path(os.getenv("BATTERY_CAPACITY_ROOT", str(BATTERY_DATA_ROOT / "capacity")))
 BATTERY_OUTPUT_ROOT = Path(os.getenv("BATTERY_OUTPUT_ROOT", str(BATTERY_DATA_ROOT / "battery_visual_outputs")))

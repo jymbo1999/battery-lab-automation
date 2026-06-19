@@ -514,8 +514,8 @@ def excel_width_to_px(width: float | None) -> int:
     return max(24, round(float(width) * 7 + 5))
 
 
-def render_page() -> str:
-    return """<!doctype html>
+def render_page(sheet_api_url: str = "/api/sheet", cell_api_url: str = "/api/cell") -> str:
+    page = """<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8">
@@ -717,6 +717,7 @@ def render_page() -> str:
   </div>
   <div class="sheet-wrap" id="sheet"></div>
   <script>
+    const api = { sheet: __SHEET_API_URL__, cell: __CELL_API_URL__ };
     const state = { data: null, filterMode: 'hide', zoom: 0.82 };
     const statusEl = document.getElementById('status');
     const titleEl = document.getElementById('title');
@@ -749,7 +750,7 @@ def render_page() -> str:
 
     async function loadSheet() {
       setStatus('Loading');
-      const response = await fetch('/api/sheet');
+      const response = await fetch(api.sheet);
       const data = await response.json();
       if (data.error) throw new Error(data.error);
       state.data = data;
@@ -860,7 +861,7 @@ def render_page() -> str:
       td.classList.add('saving');
       setStatus(`Saving ${address(td)}`);
       try {
-        const response = await fetch('/api/cell', {
+        const response = await fetch(api.cell, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ row: Number(td.dataset.row), column: Number(td.dataset.column), value })
@@ -894,3 +895,4 @@ def render_page() -> str:
 </body>
 </html>
 """
+    return page.replace("__SHEET_API_URL__", json.dumps(sheet_api_url)).replace("__CELL_API_URL__", json.dumps(cell_api_url))

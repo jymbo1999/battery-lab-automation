@@ -8,7 +8,7 @@ version = "0.1.3"
 description = "Battery Lab Flask integration and analysis tools"
 requires-python = ">=3.10"
 dependencies = [
-  "Flask",
+  "Flask>=3,<4",
   "streamlit>=1.35",
   "pandas",
   "numpy",
@@ -19,9 +19,14 @@ dependencies = [
   "python-dateutil",
 ]
 
+[project.optional-dependencies]
+server = [
+  "gunicorn>=22,<24",
+]
+
 [tool.setuptools]
-packages = ["battery_lab", "wonatech_parsers"]
-py-modules = ["app"]
+packages = ["battery_lab", "eis_fit_handoff", "wonatech_parsers"]
+py-modules = ["app", "wsgi"]
 
 [tool.setuptools.package-data]
 battery_lab = ["templates/battery_lab/*.html"]

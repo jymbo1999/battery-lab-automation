@@ -8,7 +8,7 @@ from flask_sqlalchemy import SQLAlchemy
 
 
 class BatteryJobTests(unittest.TestCase):
-    def test_job_model_creates_sqlite_tables_and_queues_job(self):
+    def test_job_model_creates_sqlite_tables_and_runs_job(self):
         db = SQLAlchemy()
         fake_apps = types.ModuleType("apps")
         fake_apps.db = db
@@ -28,17 +28,28 @@ class BatteryJobTests(unittest.TestCase):
             db.init_app(app)
 
             with app.app_context():
+                job_service.JOB_EXECUTORS["rescan_files"] = lambda target, params: {
+                    "target": target,
+                    "source": params["source"],
+                    "ok": True,
+                }
                 job = job_service.create_job("rescan_files", target="battery", params={"source": "test"})
                 self.assertEqual(job["status"], "queued")
                 self.assertEqual(job["job_type"], "rescan_files")
                 self.assertEqual(job_service.job_status_summary(), {"queued": 1})
 
                 detail = job_service.get_job(job["id"])
-                self.assertEqual(detail["logs"][0]["message"], "Job queued. Worker execution is not enabled in this phase.")
+                self.assertEqual(detail["logs"][0]["message"], "Job queued.")
+
+                finished = job_service.run_job(job["id"])
+                self.assertEqual(finished["status"], "succeeded")
+                self.assertEqual(finished["result"]["source"], "test")
+                self.assertEqual(finished["result"]["ok"], True)
+                self.assertEqual(finished["logs"][-1]["message"], "Job succeeded.")
+                self.assertEqual(job_service.job_status_summary(), {"succeeded": 1})
 
                 cancelled = job_service.cancel_job(job["id"])
-                self.assertEqual(cancelled["status"], "cancelled")
-                self.assertEqual(job_service.job_status_summary(), {"cancelled": 1})
+                self.assertEqual(cancelled["status"], "succeeded")
         finally:
             if previous_apps is None:
                 sys.modules.pop("apps", None)
@@ -47,6 +58,7 @@ class BatteryJobTests(unittest.TestCase):
             import battery_lab.job_models as job_models
             import battery_lab.job_service as job_service
 
+            job_service.JOB_EXECUTORS.pop("rescan_files", None)
             importlib.reload(job_models)
             importlib.reload(job_service)
 

@@ -1,6 +1,7 @@
 from pathlib import Path
+import threading
 
-from flask import Blueprint, abort, current_app, jsonify, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, Response, abort, current_app, jsonify, redirect, render_template, request, send_file, url_for
 
 from .config import (
     BATTERY_CAPACITY_ROOT,
@@ -14,6 +15,7 @@ from .config import (
 )
 from .matching_service import build_match_payload, save_match_overrides, save_match_selections
 from .ai_service import ai_status_payload, get_ai_run, run_ai_smoke
+from .excel_dashboard import DEFAULT_CONDITION_SHEET, WorkbookStore, render_page as render_excel_dashboard_page
 from .job_service import (
     JOB_TYPES,
     cancel_job,
@@ -22,6 +24,15 @@ from .job_service import (
     job_status_summary,
     job_system_available,
     list_jobs,
+    start_job_async,
+)
+from .viewer_service import (
+    capacity_overlay_payload,
+    capacity_source_payload,
+    capacity_viewer_options,
+    eis_overlay_payload,
+    eis_viewer_options,
+    finder_html,
 )
 
 
@@ -31,6 +42,8 @@ blueprint = Blueprint(
     url_prefix="/battery",
     template_folder="templates",
 )
+_JOURNAL_STORES: dict[tuple[str, str], WorkbookStore] = {}
+_JOURNAL_STORE_LOCK = threading.Lock()
 
 
 def _path_status(path: Path) -> dict:
@@ -162,6 +175,7 @@ def _app_context(page: str) -> dict:
             "report_exists": report_path.exists(),
         },
         "output_root": str(BATTERY_OUTPUT_ROOT),
+        "condition_sheet": DEFAULT_CONDITION_SHEET,
         "eis_artifacts": eis_artifacts,
         "capacity_artifacts": capacity_artifacts,
         "selected_eis": selected_eis_artifact["relative_path"] if selected_eis_artifact else "",
@@ -209,6 +223,43 @@ def journal():
         layout_template=current_app.config.get("BATTERY_LAB_LAYOUT_TEMPLATE", "battery_lab/standalone.html"),
         **_app_context("journal"),
     )
+
+
+def _journal_store() -> WorkbookStore:
+    key = (str(BATTERY_CONDITION_WORKBOOK.resolve()), DEFAULT_CONDITION_SHEET)
+    with _JOURNAL_STORE_LOCK:
+        store = _JOURNAL_STORES.get(key)
+        if store is None:
+            store = WorkbookStore(BATTERY_CONDITION_WORKBOOK, DEFAULT_CONDITION_SHEET)
+            _JOURNAL_STORES[key] = store
+        return store
+
+
+@blueprint.route("/journal/excel")
+def journal_excel():
+    html = render_excel_dashboard_page(
+        sheet_api_url=url_for("battery_lab.journal_sheet_api"),
+        cell_api_url=url_for("battery_lab.journal_cell_api"),
+    )
+    return Response(html, mimetype="text/html")
+
+
+@blueprint.route("/api/journal/sheet", methods=["GET"])
+def journal_sheet_api():
+    try:
+        return jsonify(_journal_store().sheet_payload())
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@blueprint.route("/api/journal/cell", methods=["POST"])
+def journal_cell_api():
+    body = request.get_json(silent=True) or {}
+    try:
+        cell = _journal_store().update_cell(int(body["row"]), int(body["column"]), body.get("value", ""))
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, "cell": cell})
 
 
 @blueprint.route("/eis")
@@ -347,6 +398,64 @@ def _match_api_config(kind: str) -> tuple[Path, Path] | None:
     return None
 
 
+@blueprint.route("/api/eis/viewer/options", methods=["GET"])
+def eis_viewer_options_api():
+    return jsonify(eis_viewer_options(BATTERY_EIS_ROOT, BATTERY_CAPACITY_ROOT, BATTERY_CONDITION_WORKBOOK, BATTERY_MATCH_EIS_JSON))
+
+
+@blueprint.route("/api/eis/finder", methods=["GET"])
+def eis_finder_api():
+    return Response(finder_html(BATTERY_EIS_ROOT, BATTERY_CAPACITY_ROOT, kind="eis"), mimetype="text/html")
+
+
+@blueprint.route("/api/eis/viewer/overlay", methods=["GET"])
+def eis_viewer_overlay_api():
+    try:
+        payload = eis_overlay_payload(
+            BATTERY_EIS_ROOT,
+            BATTERY_CAPACITY_ROOT,
+            BATTERY_CONDITION_WORKBOOK,
+            BATTERY_MATCH_EIS_JSON,
+            mode=request.args.get("mode", "comparison"),
+            key=request.args.get("key", ""),
+            show_fit=request.args.get("show_fit", "").strip().lower() in {"1", "true", "yes", "on"},
+        )
+    except Exception as exc:
+        return jsonify({"available": False, "html": "", "errors": [str(exc)], "title": "EIS viewer"}), 500
+    return jsonify(payload)
+
+
+@blueprint.route("/api/capacity/viewer/options", methods=["GET"])
+def capacity_viewer_options_api():
+    return jsonify(capacity_viewer_options(BATTERY_CAPACITY_ROOT, BATTERY_EIS_ROOT, BATTERY_CONDITION_WORKBOOK, BATTERY_MATCH_CAPACITY_JSON))
+
+
+@blueprint.route("/api/capacity/finder", methods=["GET"])
+def capacity_finder_api():
+    return Response(finder_html(BATTERY_EIS_ROOT, BATTERY_CAPACITY_ROOT, kind="capacity"), mimetype="text/html")
+
+
+@blueprint.route("/api/capacity/viewer/overlay", methods=["GET"])
+def capacity_viewer_overlay_api():
+    try:
+        payload = capacity_overlay_payload(
+            BATTERY_CAPACITY_ROOT,
+            BATTERY_EIS_ROOT,
+            BATTERY_CONDITION_WORKBOOK,
+            BATTERY_MATCH_CAPACITY_JSON,
+            mode=request.args.get("mode", "cluster"),
+            key=request.args.get("key", ""),
+        )
+    except Exception as exc:
+        return jsonify({"available": False, "html": "", "errors": [str(exc)], "title": "Capacity viewer"}), 500
+    return jsonify(payload)
+
+
+@blueprint.route("/api/capacity/viewer/source", methods=["GET"])
+def capacity_viewer_source_api():
+    return jsonify(capacity_source_payload(BATTERY_CAPACITY_ROOT, BATTERY_EIS_ROOT, request.args.get("key", "")))
+
+
 @blueprint.route("/api/jobs", methods=["GET", "POST"])
 def jobs_api():
     if not job_system_available():
@@ -372,6 +481,8 @@ def jobs_api():
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    start_job_async(int(job["id"]))
+    job = get_job(int(job["id"])) or job
     return jsonify({"available": True, "job": job}), 201
 
 

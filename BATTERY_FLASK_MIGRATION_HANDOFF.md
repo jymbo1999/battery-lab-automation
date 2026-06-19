@@ -2,9 +2,10 @@
 
 ## 현재 상황
 
-- 목표: 기존 `streamlit run app.py`로 쓰던 Battery Lab 인터페이스와 기능을 iChart Render Flask 앱의 `/battery` 아래에 kiwoom-sector-board처럼 Flask-native 모듈로 이전한다.
-- 접근: Streamlit 서버를 억지로 Flask 안에 넣지 않고, Streamlit에서 검증된 UX와 로직을 Flask `Blueprint + templates + API + services + DB/jobs` 구조로 옮긴다.
-- 이유: 앞으로 GPT API, DB 저장, 파일 위치 이동, background job, 수동 매칭, 그래프 재생성 같은 기능이 계속 추가될 예정이므로 Flask-native 구조가 유지보수에 유리하다.
+- 목표: 기존 `streamlit run app.py`로 쓰던 Battery Lab 인터페이스와 기능을 iChart Render Flask 앱의 `/battery` 아래에 kiwoom-sector-board처럼 통합한다.
+- 핵심 원칙: Battery Lab의 본체는 pip 설치 가능한 `battery_lab` 패키지 하나다. Streamlit 앱, Flask 단독 앱, iChart/Render 통합 앱은 같은 패키지 서비스와 렌더링 함수를 호출해야 한다.
+- 접근: Streamlit에서 검증된 UX/로직을 Flask에 별도 복사본으로 다시 구현하지 않는다. 공통 기능은 `battery_lab` 서비스/뷰어 레이어로 올리고, Streamlit/Flask는 얇은 shell로 둔다.
+- 이유: GPT API, DB 저장, 파일 위치 이동, background job, 수동 매칭, 그래프 재생성 같은 기능을 양쪽에서 따로 고치면 유지보수 비용이 폭발한다. 한 곳에서 수정하고 requirements install로 Render/iChart에 반영되는 구조가 맞다.
 
 ## 관련 repo
 
@@ -22,6 +23,19 @@
   - message: `Pin Battery Lab app UI revision`
 - Main Flask `requirements.txt` pin:
   - `git+https://github.com/jymbo1999/battery-lab-automation.git@e9ec836844e4124082c209e65a2c0dfd5dab0c4e#egg=battery-lab-automation`
+
+## 2026-06-19 구조 보정
+
+- Battery package repo에 Flask 단독 실행 진입점 추가:
+  - `battery_lab.flask_app:create_app`
+  - `battery_lab.flask_app:app`
+  - repo 루트 `wsgi.py`
+- Render 단독 실행 명령:
+  - `gunicorn 'battery_lab.flask_app:app'`
+  - 또는 repo 루트에서 `gunicorn wsgi:app`
+- `requirements.txt`에 Flask/Gunicorn 런타임을 명시했다.
+- iChart Flask 앱은 이미 패키지 설치 방식으로 연결되어 있다. 다만 현재 `requirements.txt`가 예전 Battery commit SHA를 pin하고 있으므로, Battery repo를 push한 뒤 해당 SHA 또는 branch/tag pin을 갱신해야 Render 빌드에 새 패키지가 들어간다.
+- Streamlit/Flask UI parity 작업은 Flask template 복사 구현을 키우는 방향이 아니라 `battery_lab/viewer_service.py` 같은 공통 서비스 레이어를 확장하는 방향으로 진행해야 한다.
 
 ## 이미 완료된 것
 
@@ -324,4 +338,3 @@ Flask template + JS + API로 옮기는 구현 계획을 먼저 작성한 뒤 진
 Battery Lab 분석 결과를 GPT로 요약/해석하는 기능을 붙일 수 있게 service interface, prompt template, DB 저장 구조를 설계해줘.
 아직 실제 API 호출은 최소 smoke까지만 하고, 키/비용/timeout/retry 정책을 안전하게 설계해줘.
 ```
-

@@ -20,7 +20,12 @@ battery_visual_outputs/
 # local data / generated artifacts
 lab_journal/
 sample_data/
-eis_fit_handoff/
+eis_fit_handoff/*
+!eis_fit_handoff/
+!eis_fit_handoff/__init__.py
+!eis_fit_handoff/eis_circle_fit.py
+!eis_fit_handoff/batch_fit_eis.py
+!eis_fit_handoff/xlsx_reader.py
 wonatech_outputs/
 battery_visual_outputs/
 *.eisfit.json
