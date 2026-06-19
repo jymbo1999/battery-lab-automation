@@ -2,12 +2,23 @@ from __future__ import annotations
 
 import csv
 import html
+from dataclasses import asdict, fields
 from pathlib import Path
 
-from .conditions import CONDITION_FIELDS, compatibility_notes, find_condition
+from .conditions import (
+    CONDITION_FIELDS,
+    build_analysis_availability,
+    build_analysis_comparison_validations,
+    build_analysis_file_records,
+    build_comparison_candidates,
+    compatibility_notes,
+    find_condition,
+)
+from .eis_matching import write_eis_match_outputs
+from .file_io import ANALYSIS_EIS
 from .interactive import write_interactive_dashboard
 from .insights import daily_summary, record_insights
-from .models import MetricRecord, ParsedDataset
+from .models import AnalysisAvailability, AnalysisComparisonValidation, AnalysisFileRecord, ComparisonCandidate, MetricRecord, ParsedDataset
 from .plots import write_dataset_plot
 
 
@@ -30,6 +41,8 @@ ANALYSIS_LABELS = {
     "voltage_profile": "Voltage profile",
     "eis": "EIS",
     "sheet_resistance": "면저항",
+    "raman": "Raman",
+    "tga": "TGA",
     "unknown": "미분류",
 }
 
@@ -47,6 +60,29 @@ def write_outputs(
         if path:
             plot_paths[dataset.meta.original_filename] = path
     write_summary_csv(records, output_dir / "summary_metrics.csv", conditions or {})
+    write_dataclass_csv(
+        build_analysis_file_records(datasets, conditions or {}),
+        output_dir / "analysis_files.csv",
+        AnalysisFileRecord,
+    )
+    write_dataclass_csv(
+        build_analysis_availability(datasets, conditions or {}),
+        output_dir / "analysis_availability.csv",
+        AnalysisAvailability,
+    )
+    write_dataclass_csv(
+        build_comparison_candidates([record.cell_id for record in records], conditions or {}),
+        output_dir / "comparison_candidates.csv",
+        ComparisonCandidate,
+    )
+    write_dataclass_csv(
+        build_analysis_comparison_validations(records, conditions or {}),
+        output_dir / "analysis_comparison_validations.csv",
+        AnalysisComparisonValidation,
+    )
+    eis_paths = [dataset.meta.path for dataset in datasets if dataset.meta.analysis_type == ANALYSIS_EIS]
+    if eis_paths and conditions:
+        write_eis_match_outputs(eis_paths, conditions or {}, output_dir)
     write_html_report(records, plot_paths, output_dir / "report.html", conditions or {})
     write_interactive_dashboard(datasets, records, output_dir / "dashboard.html", conditions or {})
 
@@ -73,6 +109,15 @@ def write_summary_csv(
             row.update({key: condition.get(key, "") for key in condition_keys})
             row.update(record.metrics)
             writer.writerow(row)
+
+
+def write_dataclass_csv(rows: list[object], path: Path, row_type: type[object]) -> None:
+    data = [asdict(row) for row in rows]
+    headers = list(data[0].keys()) if data else [field.name for field in fields(row_type)]
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(data)
 
 
 def write_html_report(

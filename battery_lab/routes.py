@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from flask import Blueprint, jsonify, render_template
+from flask import Blueprint, current_app, jsonify, render_template
 
 from .config import (
     BATTERY_CAPACITY_ROOT,
@@ -10,6 +10,7 @@ from .config import (
     BATTERY_MATCH_CAPACITY_JSON,
     BATTERY_MATCH_EIS_JSON,
     BATTERY_OUTPUT_ROOT,
+    BATTERY_STREAMLIT_URL,
 )
 
 
@@ -62,6 +63,17 @@ def _top_level_items(root: Path, limit: int = 50) -> list[dict]:
 
 @blueprint.route("/")
 def index():
+    if BATTERY_STREAMLIT_URL:
+        return render_template(
+            "battery_lab/streamlit.html",
+            layout_template=current_app.config.get("BATTERY_LAB_LAYOUT_TEMPLATE", "battery_lab/standalone.html"),
+            streamlit_url=BATTERY_STREAMLIT_URL,
+        )
+    return status()
+
+
+@blueprint.route("/status")
+def status():
     status = {
         "data_root": _path_status(BATTERY_DATA_ROOT),
         "eis_root": _path_status(BATTERY_EIS_ROOT),
@@ -71,7 +83,12 @@ def index():
         "eis_match_json": _path_status(BATTERY_MATCH_EIS_JSON),
         "capacity_match_json": _path_status(BATTERY_MATCH_CAPACITY_JSON),
     }
-    return render_template("battery_lab/index.html", status=status)
+    return render_template(
+        "battery_lab/index.html",
+        layout_template=current_app.config.get("BATTERY_LAB_LAYOUT_TEMPLATE", "battery_lab/standalone.html"),
+        status=status,
+        streamlit_url=BATTERY_STREAMLIT_URL,
+    )
 
 
 @blueprint.route("/health")
@@ -116,4 +133,8 @@ def files():
             "entries": _top_level_items(BATTERY_CONDITION_WORKBOOK.parent),
         },
     }
-    return render_template("battery_lab/files.html", roots=roots)
+    return render_template(
+        "battery_lab/files.html",
+        layout_template=current_app.config.get("BATTERY_LAB_LAYOUT_TEMPLATE", "battery_lab/standalone.html"),
+        roots=roots,
+    )

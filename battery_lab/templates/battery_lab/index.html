@@ -1,4 +1,4 @@
-{% extends "layouts/base.html" %}
+{% extends layout_template %}
 
 {% block title %} Battery Lab {% endblock %}
 
@@ -8,6 +8,9 @@
     <div class="col-12">
       <h3>Battery Lab</h3>
       <p>Render Persistent Disk의 배터리 데이터 연결 상태입니다.</p>
+      {% if streamlit_url %}
+      <p><a href="/battery" class="btn btn-sm btn-primary">Battery Lab 앱으로 이동</a></p>
+      {% endif %}
 
       <div class="card">
         <div class="card-body">

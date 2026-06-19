@@ -28,3 +28,4 @@ BATTERY_MATCH_CAPACITY_JSON = Path(
         str(BATTERY_OUTPUT_ROOT / "capacity_match_overrides.json"),
     )
 )
+BATTERY_STREAMLIT_URL = os.getenv("BATTERY_STREAMLIT_URL", "").strip().rstrip("/")

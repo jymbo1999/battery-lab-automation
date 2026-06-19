@@ -24,11 +24,16 @@ class ReportTests(unittest.TestCase):
             write_outputs(datasets, records, tmp_path, conditions)
 
             self.assertTrue((tmp_path / "summary_metrics.csv").exists())
+            self.assertTrue((tmp_path / "analysis_files.csv").exists())
+            self.assertTrue((tmp_path / "analysis_availability.csv").exists())
+            self.assertTrue((tmp_path / "comparison_candidates.csv").exists())
+            self.assertTrue((tmp_path / "analysis_comparison_validations.csv").exists())
             self.assertTrue((tmp_path / "report.html").exists())
             self.assertTrue((tmp_path / "dashboard.html").exists())
             self.assertTrue(list((tmp_path / "capacity").glob("*.svg")))
             self.assertIn("activated carbon coated graphite", (tmp_path / "report.html").read_text())
-            self.assertIn("배터리 실험 대시보드", (tmp_path / "dashboard.html").read_text())
+            self.assertIn("Analysis availability matrix", (tmp_path / "dashboard.html").read_text())
+            self.assertIn("file missing", (tmp_path / "dashboard.html").read_text())
 
 
 if __name__ == "__main__":

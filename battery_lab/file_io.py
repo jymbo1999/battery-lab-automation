@@ -9,11 +9,25 @@ from xml.etree import ElementTree as ET
 
 from .models import FileMeta, ParsedDataset
 
+try:
+    from eis_fit_handoff.eis_circle_fit import fit_eis_first_arc, load_valid_fit_metadata, save_fit_metadata
+except ModuleNotFoundError:  # pragma: no cover - keeps non-EIS use working in minimal installs.
+    fit_eis_first_arc = None
+    load_valid_fit_metadata = None
+    save_fit_metadata = None
+
+try:
+    from wonatech_parsers.eis import parse_eis_file as parse_wonatech_eis_file
+except ModuleNotFoundError:  # pragma: no cover
+    parse_wonatech_eis_file = None
+
 
 ANALYSIS_CAPACITY = "capacity"
 ANALYSIS_VOLTAGE = "voltage_profile"
 ANALYSIS_EIS = "eis"
 ANALYSIS_SHEET = "sheet_resistance"
+ANALYSIS_RAMAN = "raman"
+ANALYSIS_TGA = "tga"
 ANALYSIS_UNKNOWN = "unknown"
 
 ALIASES = {
@@ -26,6 +40,8 @@ ALIASES = {
         "charge/mah/g",
         "q_ch/m [mah/g]",
         "q_charge [mah]",
+        "q_charge_mah",
+        "q_charge_mah_g",
     },
     "discharge_capacity": {
         "discharge capacity",
@@ -35,15 +51,29 @@ ALIASES = {
         "discharge/mah/g",
         "q_dis/m [mah/g]",
         "q_discharge [mah]",
+        "q_discharge_mah",
+        "q_discharge_mah_g",
     },
     "capacity": {"capacity", "cap", "capacity/mah/g", "specific capacity", "q/m [mah/g]", "q [mah]"},
-    "voltage": {"voltage", "ewe/v", "ewe", "v", "potential", "v [v]"},
+    "voltage": {"voltage", "voltage_v", "ewe/v", "ewe", "v", "potential", "v [v]"},
     "direction": {"direction", "type", "step type", "mode"},
-    "frequency": {"frequency", "freq", "freq/hz", "hz"},
-    "z_real": {"zreal", "z real", "z'", "zre", "real", "re(z)/ohm", "z'/ohm", "z'_raw [ohm]"},
-    "z_imag": {"zimag", "z imag", "z''", "-zimag", "-z''", "imag", "im(z)/ohm", "-z''/ohm", "z\"_raw [ohm]"},
+    "frequency": {"frequency", "frequency_hz", "freq", "freq/hz", "hz"},
+    "z_real": {"zreal", "zreal_ohm", "z real", "z'", "zre", "real", "re(z)/ohm", "z'/ohm", "z'_raw [ohm]"},
+    "z_imag": {
+        "zimag",
+        "zimag_ohm",
+        "z imag",
+        "z''",
+        "-zimag",
+        "-z''",
+        "imag",
+        "im(z)/ohm",
+        "-z''/ohm",
+        "z\"_raw [ohm]",
+    },
     "sheet_resistance": {"sheet resistance", "sheet_resistance", "resistance", "ohm/sq", "ohm per sq", "ohm/square"},
     "point": {"point", "position", "replicate", "spot"},
+    "c_rate": {"c-rate", "c rate", "crate", "rate", "c_rate"},
 }
 
 
@@ -53,6 +83,14 @@ def parse_file(path: Path) -> ParsedDataset:
     rows: list[dict[str, Any]]
     if suffix in {".csv", ".tsv", ".txt"}:
         rows = read_delimited(path)
+    elif suffix in {".seo", ".sde"} and parse_wonatech_eis_file is not None:
+        try:
+            rows = read_wonatech_eis_binary(path)
+        except Exception:
+            if suffix == ".sde":
+                rows, warning = read_sde_text_table(path)
+            else:
+                rows = read_delimited(path)
     elif suffix == ".sde":
         rows, warning = read_sde_text_table(path)
     elif suffix in {".xlsx", ".xls"}:
@@ -63,8 +101,72 @@ def parse_file(path: Path) -> ParsedDataset:
     analysis_type = detect_analysis_type(path.name, normalized)
     if analysis_type == ANALYSIS_VOLTAGE:
         normalized = expand_voltage_profile_rows(normalized)
+    elif analysis_type == ANALYSIS_CAPACITY:
+        normalized = normalize_capacity_rows(normalized)
     meta = build_file_meta(path, analysis_type, warning)
+    if analysis_type == ANALYSIS_EIS:
+        ensure_eis_fit_metadata(path, normalized)
     return ParsedDataset(meta=meta, rows=normalized, columns=list(normalized[0].keys()) if normalized else [])
+
+
+def parse_eis_file(path: Path) -> dict[str, Any]:
+    dataset = parse_file(path)
+    return parsed_dataset_to_eis_arrays(dataset)
+
+
+def parsed_dataset_to_eis_arrays(dataset: ParsedDataset) -> dict[str, Any]:
+    z_real: list[float] = []
+    z_imag: list[float] = []
+    frequency: list[float | None] = []
+    for row in dataset.rows:
+        real = numeric_value(row.get("z_real"))
+        imag = numeric_value(row.get("z_imag"))
+        if real is None or imag is None:
+            continue
+        z_real.append(real)
+        z_imag.append(imag)
+        frequency.append(numeric_value(row.get("frequency")))
+    return {
+        "z_real": z_real,
+        "z_imag": z_imag,
+        "frequency": frequency,
+        "source_format": dataset.meta.path.suffix.lower().lstrip(".") or "unknown",
+    }
+
+
+def ensure_eis_fit_metadata(path: Path, rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if fit_eis_first_arc is None or load_valid_fit_metadata is None or save_fit_metadata is None:
+        return None
+    valid = load_valid_fit_metadata(path)
+    if valid is not None:
+        return valid
+    z_real: list[float] = []
+    z_imag: list[float] = []
+    for row in rows:
+        real = numeric_value(row.get("z_real"))
+        imag = numeric_value(row.get("z_imag"))
+        if real is None or imag is None:
+            continue
+        z_real.append(real)
+        z_imag.append(imag)
+    if not z_real:
+        return None
+    result = fit_eis_first_arc(z_real, z_imag)
+    save_fit_metadata(
+        path,
+        result,
+        extra={"source_format": path.suffix.lower().lstrip(".") or "unknown", "point_count": len(z_real)},
+    )
+    return load_valid_fit_metadata(path)
+
+
+def numeric_value(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def read_delimited(path: Path) -> list[dict[str, Any]]:
@@ -86,18 +188,23 @@ def read_delimited(path: Path) -> list[dict[str, Any]]:
             if any(str(value).strip() for value in record.values()):
                 output.append(record)
         return output
+    if raw_rows and looks_like_data_row(raw_rows[0]):
+        return rows_to_records(raw_rows)
     reader = csv.DictReader(text.splitlines(), dialect=dialect)
     return [dict(row) for row in reader if any((value or "").strip() for value in row.values())]
 
 
-def read_xlsx_optional(path: Path) -> list[dict[str, Any]]:
+def read_xlsx_optional(path: Path, sheet_name: str | None = None) -> list[dict[str, Any]]:
     try:
         from openpyxl import load_workbook  # type: ignore
     except ModuleNotFoundError as exc:
+        if sheet_name:
+            raise ModuleNotFoundError("openpyxl is required when reading a named workbook sheet.") from exc
         return read_xlsx_builtin(path)
     workbook = load_workbook(path, data_only=True, read_only=True)
     output = []
-    for sheet in workbook.worksheets:
+    worksheets = [workbook[sheet_name]] if sheet_name else workbook.worksheets
+    for sheet in worksheets:
         rows = list(sheet.iter_rows(values_only=True))
         output.extend(rows_to_records(rows))
     return output
@@ -112,6 +219,21 @@ def read_xlsx_builtin(path: Path) -> list[dict[str, Any]]:
             rows = read_sheet_xml(archive, sheet_name, shared_strings)
             output.extend(rows_to_records(rows))
         return output
+
+
+def read_wonatech_eis_binary(path: Path) -> list[dict[str, Any]]:
+    if parse_wonatech_eis_file is None:
+        raise ValueError("WonATech EIS parser is unavailable.")
+    result = parse_wonatech_eis_file(path)
+    return [
+        {
+            "point": record.point,
+            "frequency": record.frequency_hz,
+            "z_real": record.zreal_ohm,
+            "z_imag": record.zimag_ohm,
+        }
+        for record in result.records
+    ]
 
 
 def read_shared_strings(archive: zipfile.ZipFile) -> list[str]:
@@ -173,19 +295,41 @@ def column_index(cell_ref: str) -> int:
 def rows_to_records(rows: list[tuple[Any, ...]] | list[list[Any]]) -> list[dict[str, Any]]:
     if not rows:
         return []
-    headers = [str(value).strip() if value is not None else f"column_{idx + 1}" for idx, value in enumerate(rows[0])]
+    first_row_is_data = looks_like_data_row(rows[0])
+    headers = (
+        [f"column_{idx + 1}" for idx in range(len(rows[0]))]
+        if first_row_is_data
+        else [str(value).strip() if value is not None else f"column_{idx + 1}" for idx, value in enumerate(rows[0])]
+    )
     output = []
-    for row in rows[1:]:
+    data_rows = rows if first_row_is_data else rows[1:]
+    for row in data_rows:
         record = {headers[idx]: value for idx, value in enumerate(row) if idx < len(headers)}
         if any(value not in (None, "") for value in record.values()):
             output.append(record)
     return output
 
 
+def looks_like_data_row(row: tuple[Any, ...] | list[Any]) -> bool:
+    values = [value for value in row if value not in (None, "")]
+    if not values:
+        return False
+    numeric = sum(1 for value in values if is_number_like(value))
+    text = " ".join(str(value).lower() for value in values)
+    header_words = ("cycle", "capacity", "voltage", "z'", "sample", "binder", "전해질", "합제")
+    return numeric >= max(2, len(values) // 2) and not any(word in text for word in header_words)
+
+
+def is_number_like(value: Any) -> bool:
+    if isinstance(value, (int, float)):
+        return True
+    return bool(re.fullmatch(r"\s*[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?\s*", str(value)))
+
+
 def read_sde_text_table(path: Path) -> tuple[list[dict[str, Any]], str]:
     raw = path.read_bytes()
     if raw and raw.count(b"\x00") / len(raw) > 0.08:
-        return [], "Binary SDE file detected. Export to XLSX/CSV or add a vendor SDE parser for direct import."
+        return [], "Binary SDE file detected. Convert it through the WonATech/ZIVE parser service."
     text = raw.decode("utf-8", errors="ignore")
     if not text.strip():
         text = raw.decode("latin-1", errors="ignore")
@@ -240,6 +384,10 @@ def detect_analysis_type(filename: str, rows: list[dict[str, Any]]) -> str:
     cols = set(rows[0].keys()) if rows else set()
     if any(token in lowered for token in ("eis", "sde", "nyquist")) or {"z_real", "z_imag"} <= cols:
         return ANALYSIS_EIS
+    if "raman" in lowered:
+        return ANALYSIS_RAMAN
+    if "tga" in lowered or "thermogravimetric" in lowered:
+        return ANALYSIS_TGA
     if "sheet" in lowered or "resistance" in lowered or "sheet_resistance" in cols:
         return ANALYSIS_SHEET
     if (
@@ -249,9 +397,13 @@ def detect_analysis_type(filename: str, rows: list[dict[str, Any]]) -> str:
         or ({"capacity", "voltage"} <= cols and "direction" in cols)
     ):
         return ANALYSIS_VOLTAGE
-    if "capacity" in lowered or {"cycle", "charge_capacity", "discharge_capacity"} <= cols:
+    if "capacity" in lowered or {"cycle", "charge_capacity", "discharge_capacity"} <= cols or looks_like_capacity_columns(cols):
         return ANALYSIS_CAPACITY
     return ANALYSIS_UNKNOWN
+
+
+def looks_like_capacity_columns(cols: set[str]) -> bool:
+    return {"column_1", "column_4", "column_5"} <= cols
 
 
 def build_file_meta(path: Path, analysis_type: str, warning: str = "") -> FileMeta:
@@ -277,7 +429,7 @@ def build_file_meta(path: Path, analysis_type: str, warning: str = "") -> FileMe
 
 
 def guess_cell_id(stem: str, analysis_type: str) -> str:
-    cleaned = re.sub(r"(?i)(capacity|cycle|voltage|profile|eis|nyquist|sheet|resistance)", "", stem)
+    cleaned = re.sub(r"(?i)(capacity|cycle|voltage|profile|eis|nyquist|sheet|resistance|raman|tga|thermogravimetric)", "", stem)
     cleaned = re.sub(r"(?i)(?:^|[_\-\s])\d+hr(?:$|[_\-\s])", "_", cleaned)
     cleaned = re.sub(r"[_\-\s]+", "_", cleaned).strip("_")
     return cleaned or re.sub(r"\W+", "_", stem).strip("_") or "unknown_cell"
@@ -335,3 +487,20 @@ def expand_voltage_profile_rows(rows: list[dict[str, Any]]) -> list[dict[str, An
                 continue
             expanded.append({"cycle": cycle, "direction": direction, "voltage": voltage, "capacity": capacity})
     return expanded or rows
+
+
+def normalize_capacity_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not rows:
+        return rows
+    if {"cycle", "charge_capacity", "discharge_capacity"} <= set(rows[0]):
+        return rows
+    if not {"column_1", "column_4", "column_5"} <= set(rows[0]):
+        return rows
+    normalized = []
+    for row in rows:
+        output = dict(row)
+        output.setdefault("cycle", row.get("column_1"))
+        output.setdefault("charge_capacity", row.get("column_4"))
+        output.setdefault("discharge_capacity", row.get("column_5"))
+        normalized.append(output)
+    return normalized

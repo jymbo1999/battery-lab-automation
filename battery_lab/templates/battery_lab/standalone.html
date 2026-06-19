@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Battery Lab{% endblock %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { min-height: 100%; margin: 0; background: #f6f7f9; color: #1f2937; font-family: "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif; }
+    .content-wrapper { padding: 24px; }
+    .card { background: #fff; border: 1px solid #d8dee8; border-radius: 8px; margin: 0 0 18px; }
+    .card-body { padding: 18px; }
+    .table { width: 100%; border-collapse: collapse; background: #fff; }
+    .table th, .table td { border: 1px solid #d8dee8; padding: 8px; text-align: left; vertical-align: top; }
+    .table-sm th, .table-sm td { padding: 6px; }
+    code { background: #eef1f5; border-radius: 4px; padding: 2px 4px; }
+    .btn { display: inline-block; border: 1px solid #9aa6b2; border-radius: 6px; padding: 6px 10px; color: #1f2937; text-decoration: none; background: #fff; }
+    .btn-primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+    .btn-secondary { background: #64748b; border-color: #64748b; color: #fff; }
+    .mb-4 { margin-bottom: 24px; }
+    .mt-3 { margin-top: 16px; }
+  </style>
+  {% block stylesheets %}{% endblock stylesheets %}
+</head>
+<body>
+  {% block content %}{% endblock content %}
+</body>
+</html>

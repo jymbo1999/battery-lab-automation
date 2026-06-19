@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from statistics import mean, pstdev
 from typing import Any
 
@@ -11,7 +12,7 @@ from .models import MetricRecord, ParsedDataset
 def compute_metrics(dataset: ParsedDataset) -> MetricRecord:
     analysis = dataset.meta.analysis_type
     if analysis == ANALYSIS_CAPACITY:
-        metrics = capacity_metrics(dataset.rows)
+        metrics = capacity_metrics(dataset.rows, source_name=dataset.meta.original_filename)
     elif analysis == ANALYSIS_EIS:
         metrics = eis_metrics(dataset.rows)
     elif analysis == ANALYSIS_VOLTAGE:
@@ -26,7 +27,15 @@ def compute_metrics(dataset: ParsedDataset) -> MetricRecord:
     return MetricRecord(dataset.meta.cell_id, analysis, dataset.meta.original_filename, metrics, warning.strip())
 
 
-def capacity_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
+CE_CHARGE_OVER_DISCHARGE = "charge_over_discharge"
+CE_DISCHARGE_OVER_CHARGE = "discharge_over_charge"
+
+
+def capacity_metrics(
+    rows: list[dict[str, Any]],
+    ce_formula: str = CE_CHARGE_OVER_DISCHARGE,
+    source_name: str = "",
+) -> dict[str, Any]:
     points = []
     for row in rows:
         cycle = to_float(row.get("cycle"))
@@ -34,8 +43,11 @@ def capacity_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
         discharge = to_float(row.get("discharge_capacity"))
         if cycle is None or charge is None or discharge is None:
             continue
-        ce = charge / discharge * 100 if discharge else None
+        ce = coulombic_efficiency(charge, discharge, ce_formula)
+        c_rate = normalize_c_rate(row.get("c_rate") or row.get("rate") or row.get("current_rate"))
         points.append({"cycle": cycle, "charge": charge, "discharge": discharge, "ce": ce})
+        if c_rate:
+            points[-1]["c_rate"] = c_rate
     if not points:
         return {"rows": len(rows), "valid_points": 0}
     points.sort(key=lambda item: item["cycle"])
@@ -43,41 +55,224 @@ def capacity_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     last = points[-1]
     discharges = [p["discharge"] for p in points]
     ce_values = [p["ce"] for p in points if p["ce"] is not None]
+    stabilized_ce_values = [p["ce"] for p in points if p["ce"] is not None and p["cycle"] >= 3] or ce_values
+    protocol = classify_capacity_protocol(points, source_name)
+    rate_metrics = rate_performance_metrics(points, protocol)
     metrics = {
         "rows": len(rows),
         "valid_points": len(points),
+        "protocol": protocol,
+        "ce_formula": ce_formula,
         "ice_percent": round(first["ce"], 3) if first["ce"] is not None else "",
+        "ce_1st": round(first["ce"], 3) if first["ce"] is not None else "",
+        "first_charge_capacity": round(first["charge"], 4),
         "first_discharge_capacity": round(first["discharge"], 4),
         "max_discharge_capacity": round(max(discharges), 4),
         "last_discharge_capacity": round(last["discharge"], 4),
+        "cycle_count": len({p["cycle"] for p in points}),
         "last_cycle": int(last["cycle"]) if float(last["cycle"]).is_integer() else last["cycle"],
         "ce_mean": round(mean(ce_values), 4) if ce_values else "",
         "ce_std": round(pstdev(ce_values), 4) if len(ce_values) > 1 else 0,
+        "ce_mean_after_stabilization": round(mean(stabilized_ce_values), 4) if stabilized_ce_values else "",
+        "ce_std_after_stabilization": round(pstdev(stabilized_ce_values), 4) if len(stabilized_ce_values) > 1 else 0,
+        "ce_min": round(min(ce_values), 4) if ce_values else "",
+        "ce_anomaly_count": ce_anomaly_count(ce_values),
         "fade_slope": round(linear_slope([p["cycle"] for p in points], discharges), 6),
         "cycle_to_80": cycle_to_threshold(points, 80.0),
     }
-    for target in (50, 100, 300):
+    for target in (10, 50, 100, 300):
         metrics[f"retention@{target}"] = retention_at(points, target)
+    metrics.update(rate_metrics)
     return metrics
 
 
 def voltage_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    by_cycle: dict[float, list[tuple[float, float]]] = {}
+    by_cycle_step: dict[float, dict[str, list[tuple[float, float]]]] = {}
     for row in rows:
         cycle = to_float(row.get("cycle")) or 1.0
+        step = normalize_step(row.get("direction") or row.get("step") or row.get("mode"))
         capacity = to_float(row.get("capacity") or row.get("discharge_capacity") or row.get("charge_capacity"))
         voltage = to_float(row.get("voltage"))
         if capacity is None or voltage is None:
             continue
-        by_cycle.setdefault(cycle, []).append((capacity, voltage))
-    if not by_cycle:
+        by_cycle_step.setdefault(cycle, {}).setdefault(step, []).append((capacity, voltage))
+    if not by_cycle_step:
         return {"rows": len(rows), "valid_points": 0}
-    metrics: dict[str, Any] = {"rows": len(rows), "valid_points": sum(len(v) for v in by_cycle.values())}
-    for cycle in sorted(by_cycle)[:8]:
-        capacities = [item[0] for item in by_cycle[cycle]]
+    cycles = sorted(by_cycle_step)
+    metrics: dict[str, Any] = {
+        "rows": len(rows),
+        "valid_points": sum(len(points) for steps in by_cycle_step.values() for points in steps.values()),
+        "profile_available_cycles": ",".join(format_cycle(cycle) for cycle in cycles),
+    }
+    first_discharge_capacity = profile_capacity(by_cycle_step[cycles[0]].get("discharge", []))
+    for cycle in cycles[:8]:
+        steps = by_cycle_step[cycle]
+        all_points = [point for points in steps.values() for point in points]
+        capacities = [item[0] for item in all_points]
         key = int(cycle) if float(cycle).is_integer() else cycle
-        metrics[f"profile_capacity_{key}"] = round(max(capacities) - min(capacities), 4)
+        charge_points = steps.get("charge", [])
+        discharge_points = steps.get("discharge", [])
+        charge_cap = profile_capacity(charge_points)
+        discharge_cap = profile_capacity(discharge_points)
+        metrics[f"profile_capacity_{key}"] = round(max(capacities) - min(capacities), 4) if capacities else ""
+        metrics[f"charge_profile_capacity_{key}"] = round(charge_cap, 4) if charge_cap is not None else ""
+        metrics[f"discharge_profile_capacity_{key}"] = round(discharge_cap, 4) if discharge_cap is not None else ""
+        metrics[f"end_charge_voltage_{key}"] = round(charge_points[-1][1], 4) if charge_points else ""
+        metrics[f"end_discharge_voltage_{key}"] = round(discharge_points[-1][1], 4) if discharge_points else ""
+        hysteresis = hysteresis_metrics(charge_points, discharge_points)
+        metrics[f"mean_hysteresis_{key}"] = hysteresis["mean"]
+        metrics[f"hysteresis_at_q50_{key}"] = hysteresis["q50"]
+        if first_discharge_capacity and discharge_cap is not None:
+            metrics[f"capacity_loss_vs_first_{key}"] = round((1 - discharge_cap / first_discharge_capacity) * 100, 3)
     return metrics
+
+
+def coulombic_efficiency(charge: float, discharge: float, ce_formula: str) -> float | None:
+    if ce_formula == CE_DISCHARGE_OVER_CHARGE:
+        return discharge / charge * 100 if charge else None
+    return charge / discharge * 100 if discharge else None
+
+
+def ce_anomaly_count(ce_values: list[float]) -> int:
+    return sum(1 for value in ce_values if value < 90 or value > 110)
+
+
+def normalize_c_rate(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    text = str(value).strip().lower().replace(" ", "")
+    match = re.search(r"(\d+(?:\.\d+)?)c", text)
+    if not match:
+        return ""
+    number = float(match.group(1))
+    if number.is_integer():
+        return f"{int(number)}C"
+    return f"{str(number).replace('.', 'p')}C"
+
+
+def classify_capacity_protocol(points: list[dict[str, Any]], source_name: str = "") -> str:
+    lowered = source_name.lower()
+    if "low" in lowered and "temp" in lowered:
+        return "LOWTEMP_0p1C" if "0.1c" in lowered else "LOW_TEMP"
+    if re.search(r"\bcv\b", lowered):
+        return "CV"
+    if "rate" in lowered or "per" in lowered:
+        return "RATE_PERFORMANCE"
+    rates = [str(point.get("c_rate") or "") for point in points if point.get("c_rate")]
+    unique_rates = list(dict.fromkeys(rates))
+    if len(unique_rates) >= 3:
+        return "RATE_PERFORMANCE"
+    if len(unique_rates) == 1:
+        return f"LONG_{unique_rates[0].replace('.', 'p')}"
+    if len(unique_rates) == 2 and unique_rates[0] == "0p1C" and unique_rates[1] == "0p5C":
+        return "STABILIZE_THEN_0p5C"
+    for token, label in (("0.1c", "LONG_0p1C"), ("0.5c", "LONG_0p5C"), ("1c", "LONG_1C")):
+        if token in lowered:
+            return label
+    return "UNKNOWN"
+
+
+def rate_performance_metrics(points: list[dict[str, Any]], protocol: str) -> dict[str, Any]:
+    segments = c_rate_segments(points, protocol)
+    if not segments:
+        return {}
+    output: dict[str, Any] = {}
+    for rate, values in segments.items():
+        if values:
+            output[f"capacity@{rate}"] = round(mean(values), 4)
+    base = output.get("capacity@0p1C") or output.get("capacity@0p5C")
+    high_rate = output.get("capacity@2C") or output.get("capacity@1p5C") or output.get("capacity@1C")
+    if base and high_rate:
+        output["rate_retention_high_vs_base"] = round(high_rate / base * 100, 3)
+    recovery = recovery_after_rate(segments)
+    if recovery is not None:
+        output["recovery_after_rate"] = recovery
+    return output
+
+
+def c_rate_segments(points: list[dict[str, Any]], protocol: str) -> dict[str, list[float]]:
+    explicit: dict[str, list[float]] = {}
+    for point in points:
+        rate = point.get("c_rate")
+        if rate:
+            explicit.setdefault(str(rate), []).append(point["discharge"])
+    if explicit:
+        return explicit
+    if protocol != "RATE_PERFORMANCE" or len(points) < 10:
+        return {}
+    rates = ["0p1C", "0p5C", "1C", "1p5C", "2C", "0p5C_recovery"]
+    segment_size = max(1, len(points) // len(rates))
+    segments: dict[str, list[float]] = {}
+    for idx, point in enumerate(points):
+        rate_idx = min(idx // segment_size, len(rates) - 1)
+        segments.setdefault(rates[rate_idx], []).append(point["discharge"])
+    return segments
+
+
+def recovery_after_rate(segments: dict[str, list[float]]) -> float | None:
+    recovery = segments.get("0p5C_recovery") or segments.get("0p1C_recovery")
+    reference = segments.get("0p5C") or segments.get("0p1C")
+    if not recovery or not reference:
+        return None
+    ref_mean = mean(reference)
+    if not ref_mean:
+        return None
+    return round(mean(recovery) / ref_mean * 100, 3)
+
+
+def normalize_step(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if "dis" in text or "dchg" in text:
+        return "discharge"
+    if "ch" in text:
+        return "charge"
+    return "profile"
+
+
+def profile_capacity(points: list[tuple[float, float]]) -> float | None:
+    if not points:
+        return None
+    capacities = [point[0] for point in points]
+    return max(capacities) - min(capacities)
+
+
+def hysteresis_metrics(charge_points: list[tuple[float, float]], discharge_points: list[tuple[float, float]]) -> dict[str, Any]:
+    if len(charge_points) < 2 or len(discharge_points) < 2:
+        return {"mean": "", "q50": ""}
+    charge = sorted(charge_points)
+    discharge = sorted(discharge_points)
+    low = max(charge[0][0], discharge[0][0])
+    high = min(charge[-1][0], discharge[-1][0])
+    if high <= low:
+        return {"mean": "", "q50": ""}
+    samples = [low + (high - low) * idx / 10 for idx in range(1, 10)]
+    diffs = []
+    for capacity in samples:
+        charge_v = interpolate_voltage(charge, capacity)
+        discharge_v = interpolate_voltage(discharge, capacity)
+        if charge_v is not None and discharge_v is not None:
+            diffs.append(abs(charge_v - discharge_v))
+    q50 = low + (high - low) * 0.5
+    q50_charge = interpolate_voltage(charge, q50)
+    q50_discharge = interpolate_voltage(discharge, q50)
+    return {
+        "mean": round(mean(diffs), 4) if diffs else "",
+        "q50": round(abs(q50_charge - q50_discharge), 4) if q50_charge is not None and q50_discharge is not None else "",
+    }
+
+
+def interpolate_voltage(points: list[tuple[float, float]], capacity: float) -> float | None:
+    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+        if x0 == x1:
+            continue
+        if min(x0, x1) <= capacity <= max(x0, x1):
+            ratio = (capacity - x0) / (x1 - x0)
+            return y0 + ratio * (y1 - y0)
+    return None
+
+
+def format_cycle(cycle: float) -> str:
+    return str(int(cycle)) if float(cycle).is_integer() else str(cycle)
 
 
 def eis_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:

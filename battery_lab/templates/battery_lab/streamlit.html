@@ -1,0 +1,22 @@
+{% extends layout_template %}
+
+{% block title %}Battery Lab{% endblock %}
+
+{% block stylesheets %}
+<style>
+  html, body { height: 100%; overflow: hidden; background: #fff; }
+  .battery-streamlit-shell { position: fixed; inset: 0; background: #fff; }
+  .battery-streamlit-frame { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
+</style>
+{% endblock stylesheets %}
+
+{% block content %}
+<main class="battery-streamlit-shell">
+  <iframe
+    class="battery-streamlit-frame"
+    src="{{ streamlit_url }}"
+    title="Battery Lab"
+    allow="clipboard-read; clipboard-write; fullscreen"
+  ></iframe>
+</main>
+{% endblock content %}

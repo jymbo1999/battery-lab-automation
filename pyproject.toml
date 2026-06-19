@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "battery-lab-automation"
-version = "0.1.1"
+version = "0.1.2"
 description = "Battery Lab Flask integration and analysis tools"
 requires-python = ">=3.10"
 dependencies = [
   "Flask",
+  "streamlit>=1.35",
   "pandas",
   "numpy",
   "scipy",
@@ -19,7 +20,8 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["battery_lab"]
+packages = ["battery_lab", "wonatech_parsers"]
+py-modules = ["app"]
 
 [tool.setuptools.package-data]
 battery_lab = ["templates/battery_lab/*.html"]
