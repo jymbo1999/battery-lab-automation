@@ -18,16 +18,18 @@
 ## 바로 실행
 
 ```bash
-cd "/Users/haesungjun/VSCODE Library/BBATTAERRI/battery-lab-automation"
-python3 -m battery_lab.cli "../Project_Abstract" \
-  --conditions "../Project_Abstract/Cell condition Calculation 일부.xlsx" \
-  --output battery_visual_outputs
+export BATTERY_DATA_ROOT=/var/data/battery
+export BATTERY_OUTPUT_ROOT="$BATTERY_DATA_ROOT/battery_visual_outputs"
+export BATTERY_JOURNAL_ROOT="$BATTERY_OUTPUT_ROOT/lab_journal"
+export BATTERY_CONDITION_WORKBOOK="/var/data/battery/Project_Abstract/Cell condition Calculation.xlsx"
+python3 -m battery_lab.cli "$BATTERY_DATA_ROOT" \
+  --conditions "$BATTERY_CONDITION_WORKBOOK"
 ```
 
 결과물:
 
 ```text
-battery_visual_outputs/
+$BATTERY_OUTPUT_ROOT/
 ├─ capacity/
 ├─ voltage_profile/
 ├─ eis/
@@ -39,7 +41,7 @@ battery_visual_outputs/
 기본 실행 시 날짜별 일지도 함께 생성됩니다.
 
 ```text
-lab_journal/
+$BATTERY_JOURNAL_ROOT/
 ├─ index.html
 ├─ journal_manifest.csv
 └─ 2026-06-15/
@@ -86,7 +88,24 @@ python3 -m pip install -r requirements.txt
 streamlit run app.py
 ```
 
-앱에서는 파일 업로드 후 `대시보드 미리보기`가 바로 열리고, `날짜별 실험 일지 생성`을 켜 둔 상태라면 같은 실행 결과가 `lab_journal/index.html`에도 날짜별로 정리됩니다.
+앱에서는 파일 업로드 후 `대시보드 미리보기`가 바로 열리고, `날짜별 실험 일지 생성`을 켜 둔 상태라면 같은 실행 결과가 `BATTERY_JOURNAL_ROOT` 아래에도 날짜별로 정리됩니다.
+
+## GPT 분석 준비
+
+Flask 통합 화면의 Settings에서 GPT 분석 스모크를 실행할 수 있습니다. 기본값은 dry-run이며, 프롬프트와 산출물 스냅샷만 `battery_ai_runs`에 저장하고 OpenAI API는 호출하지 않습니다.
+
+실제 API smoke는 아래 조건이 모두 맞을 때만 실행됩니다.
+
+```bash
+export BATTERY_AI_ENABLE_API=1
+export OPENAI_API_KEY=...
+export BATTERY_AI_MODEL=gpt-5.5
+export BATTERY_AI_TIMEOUT_SECONDS=20
+export BATTERY_AI_MAX_RETRIES=1
+export BATTERY_AI_MAX_INPUT_CHARS=12000
+```
+
+`openai` Python SDK는 선택 의존성입니다. SDK, API key, enable flag 중 하나라도 없으면 API smoke는 `skipped`로 DB에 기록되고 실제 호출은 일어나지 않습니다.
 
 ## 주의
 

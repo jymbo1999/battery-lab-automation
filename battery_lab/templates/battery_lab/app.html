@@ -25,22 +25,49 @@
   .battery-stat strong { display: block; font-size: 24px; margin-top: 5px; }
   .battery-panel { background: #fff; border: 1px solid #d8dee8; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
   .battery-panel h2 { margin: 0 0 12px; font-size: 18px; }
+  .battery-panel-head { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; margin-bottom: 12px; }
+  .battery-panel-head h2 { margin-bottom: 4px; }
+  .battery-muted { color: #697486; font-size: 13px; }
   .battery-status { width: 100%; border-collapse: collapse; font-size: 13px; }
   .battery-status th, .battery-status td { border: 1px solid #d8dee8; padding: 7px; text-align: left; vertical-align: top; }
   .battery-ok { color: #0f766e; font-weight: 700; }
   .battery-miss { color: #b42318; font-weight: 700; }
   .battery-frame { width: 100%; min-height: 760px; border: 1px solid #d8dee8; border-radius: 8px; background: #fff; }
-  .battery-graph-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 12px; }
+  .battery-graph-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-bottom: 12px; }
+  .battery-select { width: 100%; min-height: 36px; border: 1px solid #a8b3c2; border-radius: 7px; background: #fff; color: #202733; padding: 6px 9px; }
+  .battery-graph-layout { display: grid; grid-template-columns: minmax(240px, 320px) minmax(0, 1fr); gap: 12px; }
   .battery-select-list { max-height: 720px; overflow: auto; border: 1px solid #d8dee8; border-radius: 8px; }
   .battery-select-list a { display: block; padding: 9px 10px; border-bottom: 1px solid #edf0f4; color: #2e394b; text-decoration: none; font-size: 12px; overflow-wrap: anywhere; }
   .battery-select-list a.active { background: #dfe8f3; font-weight: 700; }
+  .battery-preview-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 8px; font-size: 13px; }
   .battery-svg-frame { width: 100%; height: 720px; border: 1px solid #d8dee8; border-radius: 8px; background: #fff; }
   .battery-empty { color: #697486; padding: 28px; background: #f8fafc; border: 1px dashed #bdc7d5; border-radius: 8px; }
+  .battery-match-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 12px; }
+  .battery-pill { background: #eef1f5; border: 1px solid #d8dee8; border-radius: 999px; padding: 5px 9px; font-size: 12px; color: #354052; }
+  .battery-match-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .battery-match-scroll { overflow: auto; max-height: 460px; border: 1px solid #d8dee8; border-radius: 8px; }
+  .battery-match-table { width: 100%; min-width: 1060px; border-collapse: collapse; font-size: 12px; background: #fff; }
+  .battery-match-table th, .battery-match-table td { border-bottom: 1px solid #e5e9f0; padding: 7px; text-align: left; vertical-align: top; }
+  .battery-match-table th { position: sticky; top: 0; background: #f7f8fa; z-index: 1; }
+  .battery-match-table tr.selected { background: #eef6ff; }
+  .battery-match-table td.reason { max-width: 260px; }
+  .battery-match-message { margin-top: 8px; font-size: 13px; color: #526071; }
+  .battery-job-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+  .battery-job-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .battery-job-table th, .battery-job-table td { border: 1px solid #d8dee8; padding: 7px; text-align: left; vertical-align: top; }
+  .battery-job-table th { background: #f7f8fa; }
+  .battery-ai-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+  .battery-ai-output { white-space: pre-wrap; background: #f8fafc; border: 1px solid #d8dee8; border-radius: 8px; padding: 12px; min-height: 72px; font-size: 13px; }
+  .battery-status-badge { display: inline-block; border-radius: 999px; padding: 3px 8px; background: #eef1f5; font-size: 12px; }
+  .battery-status-badge.running { background: #dbeafe; color: #1d4ed8; }
+  .battery-status-badge.succeeded { background: #dcfce7; color: #166534; }
+  .battery-status-badge.failed { background: #fee2e2; color: #991b1b; }
+  .battery-status-badge.cancelled { background: #f3f4f6; color: #4b5563; }
   code { overflow-wrap: anywhere; }
   @media (max-width: 900px) {
     .battery-app { grid-template-columns: 1fr; }
     .battery-side { position: static; height: auto; }
-    .battery-grid, .battery-graph-layout { grid-template-columns: 1fr; }
+    .battery-grid, .battery-graph-layout, .battery-graph-toolbar { grid-template-columns: 1fr; }
     .battery-head { display: block; }
     .battery-actions { justify-content: flex-start; margin-top: 12px; }
   }
@@ -52,13 +79,15 @@
   <aside class="battery-side">
     <div class="battery-brand">Battery Lab</div>
     <nav class="battery-nav">
-      <a class="{% if selected_tab == 'journal' %}active{% endif %}" href="{{ url_for('battery_lab.index', tab='journal') }}">실험 일지</a>
-      <a class="{% if selected_tab == 'dashboard' %}active{% endif %}" href="{{ url_for('battery_lab.index', tab='dashboard') }}">대시보드</a>
-      <a class="{% if selected_tab == 'files' %}active{% endif %}" href="{{ url_for('battery_lab.files') }}">데이터 브라우저</a>
+      <a class="{% if page == 'dashboard' %}active{% endif %}" href="{{ url_for('battery_lab.index') }}">대시보드</a>
+      <a class="{% if page == 'journal' %}active{% endif %}" href="{{ url_for('battery_lab.journal') }}">실험 일지</a>
+      <a class="{% if page == 'files' %}active{% endif %}" href="{{ url_for('battery_lab.files') }}">데이터 브라우저</a>
       <div class="battery-nav-label">분석</div>
-      <a class="{% if selected_tab == 'eis' %}active{% endif %}" href="{{ url_for('battery_lab.index', tab='eis') }}">EIS</a>
-      <a class="{% if selected_tab == 'capacity' %}active{% endif %}" href="{{ url_for('battery_lab.index', tab='capacity') }}">Capacity</a>
-      <a class="{% if selected_tab == 'voltage_profile' %}active{% endif %}" href="{{ url_for('battery_lab.index', tab='voltage_profile') }}">Voltage Profiles</a>
+      <a class="{% if page == 'eis' %}active{% endif %}" href="{{ url_for('battery_lab.eis') }}">EIS</a>
+      <a class="{% if page == 'capacity' %}active{% endif %}" href="{{ url_for('battery_lab.capacity') }}">Capacity</a>
+      <div class="battery-nav-label">운영</div>
+      <a class="{% if page == 'jobs' %}active{% endif %}" href="{{ url_for('battery_lab.jobs') }}">Jobs</a>
+      <a class="{% if page == 'settings' %}active{% endif %}" href="{{ url_for('battery_lab.settings') }}">Settings</a>
     </nav>
   </aside>
 
@@ -84,62 +113,221 @@
       <div class="battery-stat"><span>Capacity graphs</span><strong>{{ summary.capacity_artifacts }}</strong></div>
     </div>
 
-    {% if selected_tab == 'dashboard' %}
+    {% if page == 'dashboard' %}
       <section class="battery-panel">
-        <h2>인터랙티브 대시보드</h2>
+        <div class="battery-panel-head">
+          <div>
+            <h2>인터랙티브 대시보드</h2>
+            <div class="battery-muted">생성된 dashboard.html과 report.html을 확인합니다.</div>
+          </div>
+          {% if report_url %}
+          <a class="battery-btn" href="{{ report_url }}" target="_blank" rel="noreferrer">HTML 리포트</a>
+          {% endif %}
+        </div>
         {% if dashboard_url %}
         <iframe class="battery-frame" src="{{ dashboard_url }}" title="Battery dashboard"></iframe>
         {% else %}
-        <div class="battery-empty">아직 dashboard.html 산출물이 없습니다. 그래프 산출물을 먼저 생성하거나 `/var/data/battery/battery_visual_outputs`를 확인하세요.</div>
+        <div class="battery-empty">아직 dashboard.html 산출물이 없습니다. 그래프 산출물을 먼저 생성하거나 <code>{{ output_root }}</code>를 확인하세요.</div>
         {% endif %}
       </section>
 
-    {% elif selected_tab == 'eis' %}
+    {% elif page == 'eis' %}
       <section class="battery-panel">
-        <h2>EIS 그래프 보기</h2>
+        <div class="battery-panel-head">
+          <div>
+            <h2>EIS 그래프 보기</h2>
+            <div class="battery-muted">Streamlit 원본처럼 그래프 산출물을 선택해 크게 확인합니다.</div>
+          </div>
+          <a class="battery-btn" href="{{ url_for('battery_lab.files') }}">원본 폴더</a>
+        </div>
         {% if eis_artifacts %}
+        <form class="battery-graph-toolbar" method="get" action="{{ url_for('battery_lab.eis') }}">
+          <select class="battery-select" name="graph" aria-label="EIS graph">
+            {% for artifact in eis_artifacts %}
+            <option value="{{ artifact.relative_path }}" {% if artifact.relative_path == selected_eis %}selected{% endif %}>{{ artifact.name }}</option>
+            {% endfor %}
+          </select>
+          <button class="battery-btn primary" type="submit">그래프 보기</button>
+        </form>
         <div class="battery-graph-layout">
           <div class="battery-select-list">
             {% for artifact in eis_artifacts %}
-            <a class="{% if artifact.relative_path == selected_eis %}active{% endif %}" href="{{ url_for('battery_lab.index', tab='eis', eis=artifact.relative_path) }}">{{ artifact.name }}</a>
+            <a class="{% if artifact.relative_path == selected_eis %}active{% endif %}" href="{{ url_for('battery_lab.eis', graph=artifact.relative_path) }}">{{ artifact.name }}</a>
             {% endfor %}
           </div>
-          {% for artifact in eis_artifacts %}
-            {% if artifact.relative_path == selected_eis %}
-            <iframe class="battery-svg-frame" src="{{ artifact.url }}" title="{{ artifact.name }}"></iframe>
+          <div>
+            {% if selected_eis_artifact %}
+            <div class="battery-preview-head">
+              <strong>{{ selected_eis_artifact.name }}</strong>
+              <a class="battery-btn" href="{{ selected_eis_artifact.url }}" target="_blank" rel="noreferrer">새 창</a>
+            </div>
+            <iframe class="battery-svg-frame" src="{{ selected_eis_artifact.url }}" title="{{ selected_eis_artifact.name }}"></iframe>
             {% endif %}
-          {% endfor %}
+          </div>
         </div>
         {% else %}
-        <div class="battery-empty">EIS 그래프 산출물이 없습니다. `/var/data/battery/battery_visual_outputs/eis`를 확인하세요.</div>
+        <div class="battery-empty">EIS 그래프 산출물이 없습니다. <code>{{ output_root }}/eis</code>를 확인하세요.</div>
         {% endif %}
       </section>
 
-    {% elif selected_tab == 'capacity' %}
       <section class="battery-panel">
-        <h2>Capacity 그래프 보기</h2>
+        <div class="battery-panel-head">
+          <div>
+            <h2>EIS 수동 매칭</h2>
+            <div class="battery-muted">확인 필요 파일을 실험일지 후보와 수동으로 연결합니다. 저장은 기존 JSON override와 호환됩니다.</div>
+          </div>
+        </div>
+        <div class="battery-match" data-kind="eis" data-api-url="{{ url_for('battery_lab.match_api', kind='eis') }}">
+          <div class="battery-match-summary" data-role="summary"></div>
+          <div class="battery-match-actions">
+            <button class="battery-btn primary" type="button" data-role="save">선택 저장</button>
+            <button class="battery-btn" type="button" data-role="reload">새로고침</button>
+            <button class="battery-btn" type="button" data-role="clear">수동 매칭 전체 해제</button>
+          </div>
+          <div class="battery-match-scroll" data-role="table"></div>
+          <div class="battery-match-message" data-role="message">불러오는 중...</div>
+        </div>
+      </section>
+
+    {% elif page == 'capacity' %}
+      <section class="battery-panel">
+        <div class="battery-panel-head">
+          <div>
+            <h2>Capacity 그래프 보기</h2>
+            <div class="battery-muted">Capacity 산출 그래프를 선택하고 원본 Streamlit 뷰어처럼 크게 확인합니다.</div>
+          </div>
+          <a class="battery-btn" href="{{ url_for('battery_lab.files') }}">원본 폴더</a>
+        </div>
         {% if capacity_artifacts %}
+        <form class="battery-graph-toolbar" method="get" action="{{ url_for('battery_lab.capacity') }}">
+          <select class="battery-select" name="graph" aria-label="Capacity graph">
+            {% for artifact in capacity_artifacts %}
+            <option value="{{ artifact.relative_path }}" {% if artifact.relative_path == selected_capacity %}selected{% endif %}>{{ artifact.name }}</option>
+            {% endfor %}
+          </select>
+          <button class="battery-btn primary" type="submit">그래프 보기</button>
+        </form>
         <div class="battery-graph-layout">
           <div class="battery-select-list">
             {% for artifact in capacity_artifacts %}
-            <a class="{% if artifact.relative_path == selected_capacity %}active{% endif %}" href="{{ url_for('battery_lab.index', tab='capacity', capacity=artifact.relative_path) }}">{{ artifact.name }}</a>
+            <a class="{% if artifact.relative_path == selected_capacity %}active{% endif %}" href="{{ url_for('battery_lab.capacity', graph=artifact.relative_path) }}">{{ artifact.name }}</a>
             {% endfor %}
           </div>
-          {% for artifact in capacity_artifacts %}
-            {% if artifact.relative_path == selected_capacity %}
-            <iframe class="battery-svg-frame" src="{{ artifact.url }}" title="{{ artifact.name }}"></iframe>
+          <div>
+            {% if selected_capacity_artifact %}
+            <div class="battery-preview-head">
+              <strong>{{ selected_capacity_artifact.name }}</strong>
+              <a class="battery-btn" href="{{ selected_capacity_artifact.url }}" target="_blank" rel="noreferrer">새 창</a>
+            </div>
+            <iframe class="battery-svg-frame" src="{{ selected_capacity_artifact.url }}" title="{{ selected_capacity_artifact.name }}"></iframe>
             {% endif %}
-          {% endfor %}
+          </div>
         </div>
         {% else %}
-        <div class="battery-empty">Capacity 그래프 산출물이 없습니다. `/var/data/battery/battery_visual_outputs/capacity`를 확인하세요.</div>
+        <div class="battery-empty">Capacity 그래프 산출물이 없습니다. <code>{{ output_root }}/capacity</code>를 확인하세요.</div>
         {% endif %}
       </section>
 
-    {% elif selected_tab == 'voltage_profile' %}
       <section class="battery-panel">
-        <h2>Voltage Profiles</h2>
-        <div class="battery-empty">Voltage Profiles 모듈은 현재 원본 데이터 연결을 분리해둔 상태입니다.</div>
+        <div class="battery-panel-head">
+          <div>
+            <h2>Capacity 수동 매칭</h2>
+            <div class="battery-muted">파일명 행번호와 후보 실험일지 row를 확인하고 수동 override를 저장합니다.</div>
+          </div>
+        </div>
+        <div class="battery-match" data-kind="capacity" data-api-url="{{ url_for('battery_lab.match_api', kind='capacity') }}">
+          <div class="battery-match-summary" data-role="summary"></div>
+          <div class="battery-match-actions">
+            <button class="battery-btn primary" type="button" data-role="save">선택 저장</button>
+            <button class="battery-btn" type="button" data-role="reload">새로고침</button>
+            <button class="battery-btn" type="button" data-role="clear">수동 매칭 전체 해제</button>
+          </div>
+          <div class="battery-match-scroll" data-role="table"></div>
+          <div class="battery-match-message" data-role="message">불러오는 중...</div>
+        </div>
+      </section>
+
+    {% elif page == 'files' %}
+      <section class="battery-panel">
+        <h2>데이터 브라우저</h2>
+        {% for name, data in roots.items() %}
+        <h3>{{ name }}</h3>
+        <p class="battery-muted">Path: <code>{{ data.status.path }}</code> · Exists: {{ data.status.exists }}</p>
+        <table class="battery-status">
+          <thead><tr><th>Name</th><th>Dir</th><th>Size</th><th>Modified</th><th>Path</th></tr></thead>
+          <tbody>
+            {% for item in data.entries %}
+            <tr>
+              <td>{{ item.name }}</td>
+              <td>{{ item.is_dir }}</td>
+              <td>{{ item.size_bytes }}</td>
+              <td>{{ item.mtime }}</td>
+              <td><code>{{ item.path }}</code></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5">No items or root not found.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endfor %}
+      </section>
+
+    {% elif page == 'jobs' %}
+      <section class="battery-panel">
+        <div class="battery-panel-head">
+          <div>
+            <h2>Jobs</h2>
+            <div class="battery-muted">긴 작업은 request thread에서 직접 실행하지 않고 <code>battery_jobs</code>에 queued 상태로 기록합니다.</div>
+          </div>
+        </div>
+        <div class="battery-jobs" data-api-url="{{ url_for('battery_lab.jobs_api') }}">
+          <div class="battery-match-summary" data-role="summary"></div>
+          <div class="battery-job-actions">
+            {% for job_type, label in job_types.items() %}
+            <button class="battery-btn" type="button" data-job-type="{{ job_type }}">{{ label }}</button>
+            {% endfor %}
+            <button class="battery-btn" type="button" data-role="reload">새로고침</button>
+          </div>
+          <div data-role="table"></div>
+          <div class="battery-match-message" data-role="message">
+            {% if job_db_available %}불러오는 중...{% else %}Job DB를 사용할 수 없습니다. Main Flask 앱의 SQLAlchemy DB에 연결된 환경에서 활성화됩니다.{% endif %}
+          </div>
+        </div>
+      </section>
+
+    {% elif page == 'settings' %}
+      <section class="battery-panel">
+        <h2>Settings</h2>
+        <table class="battery-status">
+          <thead><tr><th>Key</th><th>Path</th><th>Exists</th></tr></thead>
+          <tbody>
+            {% for key, item in status.items() %}
+            <tr>
+              <td>{{ key }}</td>
+              <td><code>{{ item.path }}</code></td>
+              <td class="{% if item.exists %}battery-ok{% else %}battery-miss{% endif %}">{{ item.exists }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+
+      <section class="battery-panel">
+        <div class="battery-panel-head">
+          <div>
+            <h2>GPT 분석 준비</h2>
+            <div class="battery-muted">분석 산출물 스냅샷을 프롬프트로 만들고 <code>battery_ai_runs</code>에 저장합니다. 실제 API 호출은 환경변수로 명시적으로 켠 경우에만 실행됩니다.</div>
+          </div>
+        </div>
+        <div class="battery-ai" data-status-url="{{ url_for('battery_lab.ai_status_api') }}" data-smoke-url="{{ url_for('battery_lab.ai_smoke_api') }}">
+          <div class="battery-match-summary" data-role="summary"></div>
+          <div class="battery-ai-actions">
+            <button class="battery-btn primary" type="button" data-role="dry-run">Dry-run smoke</button>
+            <button class="battery-btn" type="button" data-role="api-smoke">API smoke</button>
+            <button class="battery-btn" type="button" data-role="reload">새로고침</button>
+          </div>
+          <div class="battery-ai-output" data-role="output">{% if ai_db_available %}불러오는 중...{% else %}AI DB를 사용할 수 없습니다. Main Flask 앱의 SQLAlchemy DB에 연결된 환경에서 활성화됩니다.{% endif %}</div>
+        </div>
       </section>
 
     {% else %}
@@ -164,4 +352,304 @@
     {% endif %}
   </section>
 </main>
+<script>
+  (() => {
+    const panels = Array.from(document.querySelectorAll(".battery-match"));
+    if (!panels.length) return;
+
+    const text = (value) => value === null || value === undefined || value === "" ? "-" : String(value);
+
+    function setMessage(panel, message) {
+      panel.querySelector('[data-role="message"]').textContent = message;
+    }
+
+    function renderSummary(panel, payload) {
+      const summary = panel.querySelector('[data-role="summary"]');
+      const counts = payload.status_counts || {};
+      const countText = Object.keys(counts).sort().map((key) => `${key}: ${counts[key]}`).join(" · ") || "status 없음";
+      summary.innerHTML = "";
+      [
+        `source ${payload.source_count}`,
+        `journal rows ${payload.condition_count}`,
+        `review rows ${payload.risky_count}`,
+        `overrides ${payload.override_count}`,
+        countText,
+      ].forEach((item) => {
+        const pill = document.createElement("span");
+        pill.className = "battery-pill";
+        pill.textContent = item;
+        summary.appendChild(pill);
+      });
+    }
+
+    function renderTable(panel, rows) {
+      const tableBox = panel.querySelector('[data-role="table"]');
+      if (!rows.length) {
+        tableBox.innerHTML = '<div class="battery-empty">확인할 수동 매칭 후보가 없습니다.</div>';
+        return;
+      }
+      const kind = panel.dataset.kind;
+      const showRowPrefix = kind === "capacity";
+      const table = document.createElement("table");
+      table.className = "battery-match-table";
+      const headers = ["선택", "파일"];
+      if (showRowPrefix) headers.push("파일 행번호");
+      headers.push("후보", "날짜 차이", "단서", "score", "margin", "상태", "확인 이유");
+      table.innerHTML = `<thead><tr>${headers.map((head) => `<th>${head}</th>`).join("")}</tr></thead><tbody></tbody>`;
+      const tbody = table.querySelector("tbody");
+      rows.forEach((row, idx) => {
+        const tr = document.createElement("tr");
+        if (row.selected) tr.classList.add("selected");
+        const radioName = `${kind}-${row.file}`;
+        const cells = [
+          `<input type="radio" name="${escapeAttr(radioName)}" data-match-choice ${row.selected ? "checked" : ""}>`,
+          `<code>${escapeHtml(row.file_label || "")}</code>`,
+        ];
+        if (showRowPrefix) cells.push(escapeHtml(text(row.row_prefix)));
+        cells.push(
+          `<strong>${escapeHtml(text(row.sample))}</strong><br><span class="battery-muted">행 ${escapeHtml(text(row.journal_row))} · ${escapeHtml(text(row.date))}</span>`,
+          escapeHtml(text(row.date_delta)),
+          escapeHtml(text(row.overlap_tokens)),
+          escapeHtml(text(row.score)),
+          escapeHtml(text(row.margin)),
+          escapeHtml(text(row.status)),
+          `<span>${escapeHtml(text(row.reason))}</span>`
+        );
+        tr.innerHTML = cells.map((cell, cellIdx) => `<td class="${cellIdx === cells.length - 1 ? "reason" : ""}">${cell}</td>`).join("");
+        tr.dataset.rowIndex = String(idx);
+        tr.__matchRow = row;
+        tr.addEventListener("click", (event) => {
+          if (event.target && event.target.matches("a, button")) return;
+          const radio = tr.querySelector("input[type=radio]");
+          if (radio && !radio.checked) radio.checked = true;
+          refreshSelectedRows(table);
+        });
+        tbody.appendChild(tr);
+      });
+      table.addEventListener("change", () => refreshSelectedRows(table));
+      tableBox.replaceChildren(table);
+    }
+
+    function refreshSelectedRows(table) {
+      table.querySelectorAll("tbody tr").forEach((tr) => {
+        const radio = tr.querySelector("input[type=radio]");
+        tr.classList.toggle("selected", Boolean(radio && radio.checked));
+      });
+    }
+
+    async function loadPanel(panel) {
+      setMessage(panel, "불러오는 중...");
+      const response = await fetch(panel.dataset.apiUrl, {headers: {"Accept": "application/json"}});
+      const payload = await response.json();
+      panel.__matchPayload = payload;
+      renderSummary(panel, payload);
+      renderTable(panel, payload.rows || []);
+      if (!payload.condition_workbook_exists) {
+        setMessage(panel, `조건표 파일이 없습니다: ${payload.condition_workbook}`);
+      } else if (!payload.report_ready) {
+        setMessage(panel, "조건표 또는 원본 파일이 없어 매칭 report를 만들지 않았습니다.");
+      } else {
+        setMessage(panel, "후보 중 파일마다 하나를 선택한 뒤 저장하세요.");
+      }
+    }
+
+    async function savePanel(panel) {
+      const selections = Array.from(panel.querySelectorAll("tbody tr")).filter((tr) => {
+        const radio = tr.querySelector("input[type=radio]");
+        return radio && radio.checked;
+      }).map((tr) => tr.__matchRow).filter(Boolean);
+      setMessage(panel, "저장 중...");
+      const response = await fetch(panel.dataset.apiUrl, {
+        method: "POST",
+        headers: {"Accept": "application/json", "Content-Type": "application/json"},
+        body: JSON.stringify({selections}),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        setMessage(panel, payload.error || "저장하지 못했습니다.");
+        return;
+      }
+      panel.__matchPayload = payload;
+      renderSummary(panel, payload);
+      renderTable(panel, payload.rows || []);
+      setMessage(panel, `저장 완료: ${payload.saved_count || 0}개`);
+    }
+
+    async function clearPanel(panel) {
+      setMessage(panel, "초기화 중...");
+      const response = await fetch(panel.dataset.apiUrl, {method: "DELETE", headers: {"Accept": "application/json"}});
+      const payload = await response.json();
+      panel.__matchPayload = payload;
+      renderSummary(panel, payload);
+      renderTable(panel, payload.rows || []);
+      setMessage(panel, "수동 매칭을 모두 해제했습니다.");
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      }[char]));
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, "&#96;");
+    }
+
+    panels.forEach((panel) => {
+      panel.querySelector('[data-role="reload"]').addEventListener("click", () => loadPanel(panel).catch((error) => setMessage(panel, error.message)));
+      panel.querySelector('[data-role="save"]').addEventListener("click", () => savePanel(panel).catch((error) => setMessage(panel, error.message)));
+      panel.querySelector('[data-role="clear"]').addEventListener("click", () => clearPanel(panel).catch((error) => setMessage(panel, error.message)));
+      loadPanel(panel).catch((error) => setMessage(panel, error.message));
+    });
+  })();
+</script>
+<script>
+  (() => {
+    const panel = document.querySelector(".battery-jobs");
+    if (!panel) return;
+    const apiUrl = panel.dataset.apiUrl;
+    const summary = panel.querySelector('[data-role="summary"]');
+    const tableBox = panel.querySelector('[data-role="table"]');
+    const message = panel.querySelector('[data-role="message"]');
+
+    function setMessage(text) { message.textContent = text; }
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      }[char]));
+    }
+    function renderSummary(payload) {
+      summary.innerHTML = "";
+      const counts = payload.status_counts || {};
+      const items = [`available ${payload.available ? "yes" : "no"}`].concat(
+        Object.keys(counts).sort().map((key) => `${key}: ${counts[key]}`)
+      );
+      items.forEach((item) => {
+        const pill = document.createElement("span");
+        pill.className = "battery-pill";
+        pill.textContent = item;
+        summary.appendChild(pill);
+      });
+    }
+    function renderJobs(jobs) {
+      if (!jobs.length) {
+        tableBox.innerHTML = '<div class="battery-empty">아직 등록된 job이 없습니다.</div>';
+        return;
+      }
+      tableBox.innerHTML = `
+        <table class="battery-job-table">
+          <thead><tr><th>ID</th><th>Type</th><th>Status</th><th>Target</th><th>Created</th><th>Updated</th><th>Error</th></tr></thead>
+          <tbody>${jobs.map((job) => `
+            <tr>
+              <td>${job.id}</td>
+              <td>${escapeHtml(job.job_type_label || job.job_type)}</td>
+              <td><span class="battery-status-badge ${escapeHtml(job.status)}">${escapeHtml(job.status)}</span></td>
+              <td>${escapeHtml(job.target || "-")}</td>
+              <td>${escapeHtml(job.created_at || "-")}</td>
+              <td>${escapeHtml(job.updated_at || "-")}</td>
+              <td>${escapeHtml(job.error_message || "")}</td>
+            </tr>
+          `).join("")}</tbody>
+        </table>`;
+    }
+    async function loadJobs() {
+      setMessage("불러오는 중...");
+      const response = await fetch(apiUrl, {headers: {"Accept": "application/json"}});
+      const payload = await response.json();
+      renderSummary(payload);
+      renderJobs(payload.jobs || []);
+      setMessage(payload.available ? "Job 상태를 불러왔습니다." : "Job DB를 사용할 수 없습니다.");
+    }
+    async function createJob(jobType) {
+      setMessage("Job 등록 중...");
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {"Accept": "application/json", "Content-Type": "application/json"},
+        body: JSON.stringify({job_type: jobType, target: "battery", params: {phase: "queued_only"}}),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        setMessage(payload.error || "Job을 등록하지 못했습니다.");
+        return;
+      }
+      await loadJobs();
+      setMessage(`Job #${payload.job.id} queued`);
+    }
+    panel.querySelector('[data-role="reload"]').addEventListener("click", () => loadJobs().catch((error) => setMessage(error.message)));
+    panel.querySelectorAll("[data-job-type]").forEach((button) => {
+      button.addEventListener("click", () => createJob(button.dataset.jobType).catch((error) => setMessage(error.message)));
+    });
+    loadJobs().catch((error) => setMessage(error.message));
+  })();
+</script>
+<script>
+  (() => {
+    const panel = document.querySelector(".battery-ai");
+    if (!panel) return;
+    const summary = panel.querySelector('[data-role="summary"]');
+    const output = panel.querySelector('[data-role="output"]');
+
+    function setOutput(text) { output.textContent = text; }
+    function renderSummary(payload) {
+      summary.innerHTML = "";
+      const policy = payload.policy || {};
+      const snapshot = payload.snapshot || {};
+      const items = [
+        `db ${payload.available ? "yes" : "no"}`,
+        `api ${policy.api_enabled ? "enabled" : "disabled"}`,
+        `key ${policy.api_key_present ? "present" : "missing"}`,
+        `sdk ${policy.sdk_available ? "yes" : "no"}`,
+        `model ${policy.model || "-"}`,
+        `timeout ${policy.timeout_seconds || "-"}s`,
+        `retries ${policy.max_retries ?? "-"}`,
+        `eis graphs ${(snapshot.graph_counts || {}).eis ?? 0}`,
+        `capacity graphs ${(snapshot.graph_counts || {}).capacity ?? 0}`,
+      ];
+      items.forEach((item) => {
+        const pill = document.createElement("span");
+        pill.className = "battery-pill";
+        pill.textContent = item;
+        summary.appendChild(pill);
+      });
+    }
+    async function loadStatus() {
+      const response = await fetch(panel.dataset.statusUrl, {headers: {"Accept": "application/json"}});
+      const payload = await response.json();
+      renderSummary(payload);
+      const recent = payload.recent_runs || [];
+      const recentText = recent.length ? recent.map((run) => `#${run.id} ${run.status} ${run.model} ${run.created_at || ""}`).join("\n") : "최근 GPT run이 없습니다.";
+      setOutput(recentText);
+    }
+    async function smoke(callApi) {
+      setOutput(callApi ? "API smoke 준비 중..." : "Dry-run smoke 저장 중...");
+      const response = await fetch(panel.dataset.smokeUrl, {
+        method: "POST",
+        headers: {"Accept": "application/json", "Content-Type": "application/json"},
+        body: JSON.stringify({call_api: callApi}),
+      });
+      const payload = await response.json();
+      renderSummary(payload);
+      if (!response.ok) {
+        setOutput(payload.error || "Smoke를 실행하지 못했습니다.");
+        return;
+      }
+      const run = payload.run || {};
+      const lines = [`#${run.id} ${run.status}`, run.output_text || run.error_message || ""];
+      if (run.error_message && run.output_text) lines.push(run.error_message);
+      setOutput(lines.filter(Boolean).join("\n"));
+    }
+    panel.querySelector('[data-role="reload"]').addEventListener("click", () => loadStatus().catch((error) => setOutput(error.message)));
+    panel.querySelector('[data-role="dry-run"]').addEventListener("click", () => smoke(false).catch((error) => setOutput(error.message)));
+    panel.querySelector('[data-role="api-smoke"]').addEventListener("click", () => smoke(true).catch((error) => setOutput(error.message)));
+    loadStatus().catch((error) => setOutput(error.message));
+  })();
+</script>
 {% endblock content %}

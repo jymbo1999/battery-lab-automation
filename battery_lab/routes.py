@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from flask import Blueprint, abort, current_app, jsonify, render_template, request, send_file, url_for
+from flask import Blueprint, abort, current_app, jsonify, redirect, render_template, request, send_file, url_for
 
 from .config import (
     BATTERY_CAPACITY_ROOT,
@@ -11,6 +11,17 @@ from .config import (
     BATTERY_MATCH_EIS_JSON,
     BATTERY_OUTPUT_ROOT,
     BATTERY_STREAMLIT_URL,
+)
+from .matching_service import build_match_payload, save_match_overrides, save_match_selections
+from .ai_service import ai_status_payload, get_ai_run, run_ai_smoke
+from .job_service import (
+    JOB_TYPES,
+    cancel_job,
+    create_job,
+    get_job,
+    job_status_summary,
+    job_system_available,
+    list_jobs,
 )
 
 
@@ -87,6 +98,10 @@ def _analysis_artifacts(analysis: str, limit: int = 400) -> list[dict]:
     for path in root.rglob("*"):
         if not path.is_file() or path.suffix.lower() not in {".svg", ".png", ".jpg", ".jpeg"}:
             continue
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
         rel_path = path.relative_to(root)
         artifacts.append(
             {
@@ -94,6 +109,8 @@ def _analysis_artifacts(analysis: str, limit: int = 400) -> list[dict]:
                 "relative_path": str(rel_path),
                 "url": url_for("battery_lab.artifact", analysis=analysis, rel_path=str(rel_path)),
                 "is_svg": path.suffix.lower() == ".svg",
+                "size_bytes": stat.st_size,
+                "mtime": stat.st_mtime,
             }
         )
     return sorted(artifacts, key=lambda item: item["name"].lower())[:limit]
@@ -106,18 +123,26 @@ def _output_file(name: str) -> Path:
     return path
 
 
-def _app_context() -> dict:
+def _selected_artifact(artifacts: list[dict], selected: str) -> dict | None:
+    if not artifacts:
+        return None
+    for artifact in artifacts:
+        if artifact["relative_path"] == selected:
+            return artifact
+    return artifacts[0]
+
+
+def _app_context(page: str) -> dict:
     eis_artifacts = _analysis_artifacts("eis")
     capacity_artifacts = _analysis_artifacts("capacity")
-    selected_tab = request.args.get("tab", "journal")
-    selected_eis = request.args.get("eis") or (eis_artifacts[0]["relative_path"] if eis_artifacts else "")
-    selected_capacity = request.args.get("capacity") or (
-        capacity_artifacts[0]["relative_path"] if capacity_artifacts else ""
-    )
+    selected_eis = request.args.get("graph") or request.args.get("eis") or ""
+    selected_capacity = request.args.get("graph") or request.args.get("capacity") or ""
+    selected_eis_artifact = _selected_artifact(eis_artifacts, selected_eis)
+    selected_capacity_artifact = _selected_artifact(capacity_artifacts, selected_capacity)
     dashboard_path = _output_file("dashboard.html")
     report_path = _output_file("report.html")
     return {
-        "selected_tab": selected_tab,
+        "page": page,
         "streamlit_url": BATTERY_STREAMLIT_URL,
         "status": {
             "data_root": _path_status(BATTERY_DATA_ROOT),
@@ -136,27 +161,89 @@ def _app_context() -> dict:
             "dashboard_exists": dashboard_path.exists(),
             "report_exists": report_path.exists(),
         },
+        "output_root": str(BATTERY_OUTPUT_ROOT),
         "eis_artifacts": eis_artifacts,
         "capacity_artifacts": capacity_artifacts,
-        "selected_eis": selected_eis,
-        "selected_capacity": selected_capacity,
+        "selected_eis": selected_eis_artifact["relative_path"] if selected_eis_artifact else "",
+        "selected_capacity": selected_capacity_artifact["relative_path"] if selected_capacity_artifact else "",
+        "selected_eis_artifact": selected_eis_artifact,
+        "selected_capacity_artifact": selected_capacity_artifact,
         "dashboard_url": url_for("battery_lab.output_asset", name="dashboard.html") if dashboard_path.exists() else "",
         "report_url": url_for("battery_lab.output_asset", name="report.html") if report_path.exists() else "",
+        "job_types": JOB_TYPES,
+        "job_db_available": job_system_available(),
+        "ai_db_available": ai_status_payload(BATTERY_OUTPUT_ROOT)["available"],
     }
 
 
 @blueprint.route("/")
 def index():
-    if BATTERY_STREAMLIT_URL:
-        return render_template(
-            "battery_lab/streamlit.html",
-            layout_template=current_app.config.get("BATTERY_LAB_LAYOUT_TEMPLATE", "battery_lab/standalone.html"),
-            streamlit_url=BATTERY_STREAMLIT_URL,
-        )
+    legacy_tab = request.args.get("tab")
+    if legacy_tab:
+        route_map = {
+            "dashboard": "battery_lab.index",
+            "journal": "battery_lab.journal",
+            "files": "battery_lab.files",
+            "eis": "battery_lab.eis",
+            "capacity": "battery_lab.capacity",
+            "voltage_profile": "battery_lab.settings",
+        }
+        endpoint = route_map.get(legacy_tab, "battery_lab.journal")
+        values = {}
+        if legacy_tab == "eis" and request.args.get("eis"):
+            values["graph"] = request.args["eis"]
+        if legacy_tab == "capacity" and request.args.get("capacity"):
+            values["graph"] = request.args["capacity"]
+        return redirect(url_for(endpoint, **values))
     return render_template(
         "battery_lab/app.html",
         layout_template=current_app.config.get("BATTERY_LAB_LAYOUT_TEMPLATE", "battery_lab/standalone.html"),
-        **_app_context(),
+        **_app_context("dashboard"),
+    )
+
+
+@blueprint.route("/journal")
+def journal():
+    return render_template(
+        "battery_lab/app.html",
+        layout_template=current_app.config.get("BATTERY_LAB_LAYOUT_TEMPLATE", "battery_lab/standalone.html"),
+        **_app_context("journal"),
+    )
+
+
+@blueprint.route("/eis")
+def eis():
+    return render_template(
+        "battery_lab/app.html",
+        layout_template=current_app.config.get("BATTERY_LAB_LAYOUT_TEMPLATE", "battery_lab/standalone.html"),
+        **_app_context("eis"),
+    )
+
+
+@blueprint.route("/capacity")
+def capacity():
+    return render_template(
+        "battery_lab/app.html",
+        layout_template=current_app.config.get("BATTERY_LAB_LAYOUT_TEMPLATE", "battery_lab/standalone.html"),
+        **_app_context("capacity"),
+    )
+
+
+@blueprint.route("/jobs")
+def jobs():
+    return render_template(
+        "battery_lab/app.html",
+        layout_template=current_app.config.get("BATTERY_LAB_LAYOUT_TEMPLATE", "battery_lab/standalone.html"),
+        **_app_context("jobs"),
+    )
+
+
+@blueprint.route("/settings")
+def settings():
+    return render_template(
+        "battery_lab/app.html",
+        layout_template=current_app.config.get("BATTERY_LAB_LAYOUT_TEMPLATE", "battery_lab/standalone.html"),
+        **_app_context("settings"),
     )
 
 
@@ -222,10 +309,125 @@ def files():
         },
     }
     return render_template(
-        "battery_lab/files.html",
+        "battery_lab/app.html",
         layout_template=current_app.config.get("BATTERY_LAB_LAYOUT_TEMPLATE", "battery_lab/standalone.html"),
+        **_app_context("files"),
         roots=roots,
     )
+
+
+@blueprint.route("/api/<kind>/matches", methods=["GET", "POST", "DELETE"])
+def match_api(kind: str):
+    config = _match_api_config(kind)
+    if config is None:
+        abort(404)
+    source_root, override_path = config
+    if request.method == "GET":
+        return jsonify(build_match_payload(kind, source_root, BATTERY_CONDITION_WORKBOOK, override_path))
+    if request.method == "DELETE":
+        save_match_overrides(override_path, {})
+        payload = build_match_payload(kind, source_root, BATTERY_CONDITION_WORKBOOK, override_path)
+        payload["saved_count"] = 0
+        return jsonify(payload)
+    body = request.get_json(silent=True) or {}
+    selections = body.get("selections") or []
+    if not isinstance(selections, list):
+        return jsonify({"error": "selections must be a list"}), 400
+    try:
+        return jsonify(save_match_selections(kind, source_root, BATTERY_CONDITION_WORKBOOK, override_path, selections))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+def _match_api_config(kind: str) -> tuple[Path, Path] | None:
+    if kind == "eis":
+        return BATTERY_EIS_ROOT, BATTERY_MATCH_EIS_JSON
+    if kind == "capacity":
+        return BATTERY_CAPACITY_ROOT, BATTERY_MATCH_CAPACITY_JSON
+    return None
+
+
+@blueprint.route("/api/jobs", methods=["GET", "POST"])
+def jobs_api():
+    if not job_system_available():
+        return jsonify({"available": False, "jobs": [], "status_counts": {}, "job_types": JOB_TYPES}), 503
+    if request.method == "GET":
+        status = request.args.get("status") or None
+        limit = _int_arg("limit", 50, minimum=1, maximum=200)
+        return jsonify(
+            {
+                "available": True,
+                "jobs": list_jobs(limit=limit, status=status),
+                "status_counts": job_status_summary(),
+                "job_types": JOB_TYPES,
+            }
+        )
+    body = request.get_json(silent=True) or {}
+    try:
+        job = create_job(
+            str(body.get("job_type") or ""),
+            target=str(body.get("target") or ""),
+            params=body.get("params") if isinstance(body.get("params"), dict) else {},
+            created_by=str(body.get("created_by") or ""),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"available": True, "job": job}), 201
+
+
+@blueprint.route("/api/jobs/<int:job_id>", methods=["GET"])
+def job_detail_api(job_id: int):
+    if not job_system_available():
+        return jsonify({"available": False, "job": None}), 503
+    job = get_job(job_id)
+    if job is None:
+        abort(404)
+    return jsonify({"available": True, "job": job})
+
+
+@blueprint.route("/api/jobs/<int:job_id>/cancel", methods=["POST"])
+def job_cancel_api(job_id: int):
+    if not job_system_available():
+        return jsonify({"available": False, "job": None}), 503
+    job = cancel_job(job_id)
+    if job is None:
+        abort(404)
+    return jsonify({"available": True, "job": job})
+
+
+@blueprint.route("/api/ai/status", methods=["GET"])
+def ai_status_api():
+    return jsonify(ai_status_payload(BATTERY_OUTPUT_ROOT))
+
+
+@blueprint.route("/api/ai/smoke", methods=["POST"])
+def ai_smoke_api():
+    body = request.get_json(silent=True) or {}
+    try:
+        payload = run_ai_smoke(
+            BATTERY_OUTPUT_ROOT,
+            call_api=bool(body.get("call_api")),
+            created_by=str(body.get("created_by") or ""),
+        )
+    except RuntimeError as exc:
+        return jsonify({"available": False, "error": str(exc), "policy": ai_status_payload(BATTERY_OUTPUT_ROOT)["policy"]}), 503
+    return jsonify(payload)
+
+
+@blueprint.route("/api/ai/runs/<int:run_id>", methods=["GET"])
+def ai_run_detail_api(run_id: int):
+    run = get_ai_run(run_id)
+    if run is None:
+        abort(404)
+    return jsonify({"available": True, "run": run})
+
+
+def _int_arg(name: str, default: int, *, minimum: int, maximum: int) -> int:
+    try:
+        value = int(request.args.get(name, default))
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(maximum, value))
 
 
 @blueprint.route("/output/<path:name>")

@@ -13,6 +13,7 @@ __all__ = [
 
 
 def register_battery_lab(app):
+    from . import job_models  # noqa: F401
     from .routes import blueprint
 
     app.config.setdefault("BATTERY_LAB_LAYOUT_TEMPLATE", "battery_lab/standalone.html")

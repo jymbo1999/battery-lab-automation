@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from .config import BATTERY_JOURNAL_ROOT, BATTERY_OUTPUT_ROOT
 from .conditions import read_conditions
 from .file_io import parse_file
 from .journal import write_journal
@@ -17,10 +18,10 @@ SUPPORTED = {".csv", ".tsv", ".txt", ".seo", ".sde", ".wrd", ".xlsx", ".xls"}
 def main() -> int:
     parser = argparse.ArgumentParser(description="배터리 실험 그래프와 요약 지표를 자동 생성합니다.")
     parser.add_argument("input", type=Path, help="입력 파일 또는 폴더")
-    parser.add_argument("--output", type=Path, default=Path("battery_visual_outputs"), help="출력 폴더")
+    parser.add_argument("--output", type=Path, default=BATTERY_OUTPUT_ROOT, help="출력 폴더")
     parser.add_argument("--conditions", type=Path, help="선택 사항: 셀 조건표 CSV/XLSX")
     parser.add_argument("--condition-sheet", default=None, help="조건표 XLSX에서 읽을 sheet 이름. 예: JYJ")
-    parser.add_argument("--journal", type=Path, default=Path("lab_journal"), help="날짜별 일지 출력 폴더")
+    parser.add_argument("--journal", type=Path, default=BATTERY_JOURNAL_ROOT, help="날짜별 일지 출력 폴더")
     parser.add_argument("--no-journal", action="store_true", help="날짜별 일지 생성을 끕니다.")
     parser.add_argument("--write-wrd-raw", action="store_true", help="WRD raw time-series CSV도 생성합니다. 파일이 매우 커질 수 있습니다.")
     args = parser.parse_args()

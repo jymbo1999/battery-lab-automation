@@ -4,6 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from battery_lab.cli import collect_paths
+from battery_lab.config import BATTERY_JOURNAL_ROOT, BATTERY_OUTPUT_ROOT
 from battery_lab.conditions import read_conditions
 from battery_lab.excel_dashboard import DEFAULT_CONDITION_WORKBOOK, DEFAULT_CONDITION_SHEET, ensure_excel_dashboard_server
 from battery_lab.file_io import parse_file
@@ -56,10 +57,10 @@ def render_journal_page(st: object, components: object) -> None:
             accept_multiple_files=True,
         )
         condition_file = st.file_uploader("셀 조건표 업로드 (선택)", type=["csv", "xlsx", "xls"])
-        output_dir = Path(st.text_input("출력 폴더", "battery_visual_outputs"))
+        output_dir = Path(st.text_input("출력 폴더", str(BATTERY_OUTPUT_ROOT))).expanduser()
         write_wrd_raw = st.checkbox("WRD raw time-series CSV 생성", value=False, help="수십~수백 MB가 될 수 있어 기본값은 꺼져 있습니다.")
         make_journal = st.checkbox("날짜별 실험 일지 생성", value=True)
-        journal_dir = Path(st.text_input("일지 폴더", "lab_journal", disabled=not make_journal))
+        journal_dir = Path(st.text_input("일지 폴더", str(BATTERY_JOURNAL_ROOT), disabled=not make_journal)).expanduser()
         if st.button("파일 처리", type="primary", disabled=not uploaded):
             with TemporaryDirectory() as tmp:
                 tmp_path = Path(tmp)
