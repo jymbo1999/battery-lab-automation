@@ -1,0 +1,167 @@
+{% extends layout_template %}
+
+{% block title %}Battery Lab{% endblock %}
+
+{% block stylesheets %}
+<style>
+  html, body { background: #eef1f5; color: #202733; }
+  .battery-app { min-height: 100vh; display: grid; grid-template-columns: 236px minmax(0, 1fr); }
+  .battery-side { position: sticky; top: 0; height: 100vh; background: #f7f8fa; border-right: 1px solid #d8dee8; padding: 18px 14px; }
+  .battery-brand { font-weight: 760; font-size: 18px; margin: 2px 8px 18px; }
+  .battery-nav { display: grid; gap: 6px; }
+  .battery-nav a { color: #354052; text-decoration: none; padding: 10px 12px; border-radius: 8px; font-size: 14px; }
+  .battery-nav a:hover, .battery-nav a.active { background: #dfe8f3; color: #172033; }
+  .battery-nav-label { margin: 18px 12px 6px; font-size: 11px; color: #7b8490; text-transform: uppercase; letter-spacing: .08em; }
+  .battery-main { padding: 22px; }
+  .battery-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 16px; }
+  .battery-head h1 { margin: 0; font-size: 25px; }
+  .battery-head p { margin: 6px 0 0; color: #647084; }
+  .battery-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .battery-btn { display: inline-flex; align-items: center; min-height: 34px; border: 1px solid #a8b3c2; border-radius: 7px; padding: 6px 10px; background: #fff; color: #1f2937; text-decoration: none; font-size: 13px; }
+  .battery-btn.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+  .battery-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .battery-stat { background: #fff; border: 1px solid #d8dee8; border-radius: 8px; padding: 13px; }
+  .battery-stat span { display: block; color: #697486; font-size: 12px; }
+  .battery-stat strong { display: block; font-size: 24px; margin-top: 5px; }
+  .battery-panel { background: #fff; border: 1px solid #d8dee8; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .battery-panel h2 { margin: 0 0 12px; font-size: 18px; }
+  .battery-status { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .battery-status th, .battery-status td { border: 1px solid #d8dee8; padding: 7px; text-align: left; vertical-align: top; }
+  .battery-ok { color: #0f766e; font-weight: 700; }
+  .battery-miss { color: #b42318; font-weight: 700; }
+  .battery-frame { width: 100%; min-height: 760px; border: 1px solid #d8dee8; border-radius: 8px; background: #fff; }
+  .battery-graph-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 12px; }
+  .battery-select-list { max-height: 720px; overflow: auto; border: 1px solid #d8dee8; border-radius: 8px; }
+  .battery-select-list a { display: block; padding: 9px 10px; border-bottom: 1px solid #edf0f4; color: #2e394b; text-decoration: none; font-size: 12px; overflow-wrap: anywhere; }
+  .battery-select-list a.active { background: #dfe8f3; font-weight: 700; }
+  .battery-svg-frame { width: 100%; height: 720px; border: 1px solid #d8dee8; border-radius: 8px; background: #fff; }
+  .battery-empty { color: #697486; padding: 28px; background: #f8fafc; border: 1px dashed #bdc7d5; border-radius: 8px; }
+  code { overflow-wrap: anywhere; }
+  @media (max-width: 900px) {
+    .battery-app { grid-template-columns: 1fr; }
+    .battery-side { position: static; height: auto; }
+    .battery-grid, .battery-graph-layout { grid-template-columns: 1fr; }
+    .battery-head { display: block; }
+    .battery-actions { justify-content: flex-start; margin-top: 12px; }
+  }
+</style>
+{% endblock stylesheets %}
+
+{% block content %}
+<main class="battery-app">
+  <aside class="battery-side">
+    <div class="battery-brand">Battery Lab</div>
+    <nav class="battery-nav">
+      <a class="{% if selected_tab == 'journal' %}active{% endif %}" href="{{ url_for('battery_lab.index', tab='journal') }}">실험 일지</a>
+      <a class="{% if selected_tab == 'dashboard' %}active{% endif %}" href="{{ url_for('battery_lab.index', tab='dashboard') }}">대시보드</a>
+      <a class="{% if selected_tab == 'files' %}active{% endif %}" href="{{ url_for('battery_lab.files') }}">데이터 브라우저</a>
+      <div class="battery-nav-label">분석</div>
+      <a class="{% if selected_tab == 'eis' %}active{% endif %}" href="{{ url_for('battery_lab.index', tab='eis') }}">EIS</a>
+      <a class="{% if selected_tab == 'capacity' %}active{% endif %}" href="{{ url_for('battery_lab.index', tab='capacity') }}">Capacity</a>
+      <a class="{% if selected_tab == 'voltage_profile' %}active{% endif %}" href="{{ url_for('battery_lab.index', tab='voltage_profile') }}">Voltage Profiles</a>
+    </nav>
+  </aside>
+
+  <section class="battery-main">
+    <header class="battery-head">
+      <div>
+        <h1>배터리 실험 자동 정리</h1>
+        <p>Render Persistent Disk의 원본 데이터와 산출 그래프를 직접 표시합니다.</p>
+      </div>
+      <div class="battery-actions">
+        {% if streamlit_url %}
+        <a class="battery-btn primary" href="{{ streamlit_url }}" target="_blank" rel="noreferrer">Streamlit 열기</a>
+        {% endif %}
+        <a class="battery-btn" href="{{ url_for('battery_lab.status') }}">연결 상태</a>
+        <a class="battery-btn" href="{{ url_for('battery_lab.health') }}">Health JSON</a>
+      </div>
+    </header>
+
+    <div class="battery-grid">
+      <div class="battery-stat"><span>EIS source files</span><strong>{{ summary.eis_sources }}</strong></div>
+      <div class="battery-stat"><span>Capacity source files</span><strong>{{ summary.capacity_sources }}</strong></div>
+      <div class="battery-stat"><span>EIS graphs</span><strong>{{ summary.eis_artifacts }}</strong></div>
+      <div class="battery-stat"><span>Capacity graphs</span><strong>{{ summary.capacity_artifacts }}</strong></div>
+    </div>
+
+    {% if selected_tab == 'dashboard' %}
+      <section class="battery-panel">
+        <h2>인터랙티브 대시보드</h2>
+        {% if dashboard_url %}
+        <iframe class="battery-frame" src="{{ dashboard_url }}" title="Battery dashboard"></iframe>
+        {% else %}
+        <div class="battery-empty">아직 dashboard.html 산출물이 없습니다. 그래프 산출물을 먼저 생성하거나 `/var/data/battery/battery_visual_outputs`를 확인하세요.</div>
+        {% endif %}
+      </section>
+
+    {% elif selected_tab == 'eis' %}
+      <section class="battery-panel">
+        <h2>EIS 그래프 보기</h2>
+        {% if eis_artifacts %}
+        <div class="battery-graph-layout">
+          <div class="battery-select-list">
+            {% for artifact in eis_artifacts %}
+            <a class="{% if artifact.relative_path == selected_eis %}active{% endif %}" href="{{ url_for('battery_lab.index', tab='eis', eis=artifact.relative_path) }}">{{ artifact.name }}</a>
+            {% endfor %}
+          </div>
+          {% for artifact in eis_artifacts %}
+            {% if artifact.relative_path == selected_eis %}
+            <iframe class="battery-svg-frame" src="{{ artifact.url }}" title="{{ artifact.name }}"></iframe>
+            {% endif %}
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="battery-empty">EIS 그래프 산출물이 없습니다. `/var/data/battery/battery_visual_outputs/eis`를 확인하세요.</div>
+        {% endif %}
+      </section>
+
+    {% elif selected_tab == 'capacity' %}
+      <section class="battery-panel">
+        <h2>Capacity 그래프 보기</h2>
+        {% if capacity_artifacts %}
+        <div class="battery-graph-layout">
+          <div class="battery-select-list">
+            {% for artifact in capacity_artifacts %}
+            <a class="{% if artifact.relative_path == selected_capacity %}active{% endif %}" href="{{ url_for('battery_lab.index', tab='capacity', capacity=artifact.relative_path) }}">{{ artifact.name }}</a>
+            {% endfor %}
+          </div>
+          {% for artifact in capacity_artifacts %}
+            {% if artifact.relative_path == selected_capacity %}
+            <iframe class="battery-svg-frame" src="{{ artifact.url }}" title="{{ artifact.name }}"></iframe>
+            {% endif %}
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="battery-empty">Capacity 그래프 산출물이 없습니다. `/var/data/battery/battery_visual_outputs/capacity`를 확인하세요.</div>
+        {% endif %}
+      </section>
+
+    {% elif selected_tab == 'voltage_profile' %}
+      <section class="battery-panel">
+        <h2>Voltage Profiles</h2>
+        <div class="battery-empty">Voltage Profiles 모듈은 현재 원본 데이터 연결을 분리해둔 상태입니다.</div>
+      </section>
+
+    {% else %}
+      <section class="battery-panel">
+        <h2>실험 일지</h2>
+        <table class="battery-status">
+          <thead><tr><th>Key</th><th>Path</th><th>Exists</th></tr></thead>
+          <tbody>
+            {% for key, item in status.items() %}
+            <tr>
+              <td>{{ key }}</td>
+              <td><code>{{ item.path }}</code></td>
+              <td class="{% if item.exists %}battery-ok{% else %}battery-miss{% endif %}">{{ item.exists }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% if report_url %}
+        <p style="margin-top:14px"><a class="battery-btn" href="{{ report_url }}" target="_blank" rel="noreferrer">HTML 리포트 열기</a></p>
+        {% endif %}
+      </section>
+    {% endif %}
+  </section>
+</main>
+{% endblock content %}

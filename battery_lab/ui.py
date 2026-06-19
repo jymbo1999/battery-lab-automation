@@ -21,6 +21,14 @@ from .capacity_matching import (
     classify_capacity_protocol,
     write_capacity_match_outputs,
 )
+from .config import (
+    BATTERY_CAPACITY_ROOT,
+    BATTERY_DATA_ROOT,
+    BATTERY_EIS_ROOT,
+    BATTERY_MATCH_CAPACITY_JSON,
+    BATTERY_MATCH_EIS_JSON,
+    BATTERY_OUTPUT_ROOT,
+)
 from .conditions import read_conditions
 from .eis_matching import build_eis_match_report, write_eis_match_outputs
 from .excel_dashboard import DEFAULT_CONDITION_SHEET, DEFAULT_CONDITION_WORKBOOK
@@ -38,12 +46,12 @@ except ModuleNotFoundError:  # pragma: no cover
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DATA_ROOT = Path(__file__).resolve().parents[2]
-CAPACITY_ROOT = DATA_ROOT / "capacity"
-EIS_ROOT = DATA_ROOT / "EIS"
-ANALYSIS_OUTPUT_ROOT = PROJECT_ROOT / "battery_visual_outputs"
-EIS_MATCH_OVERRIDES_PATH = ANALYSIS_OUTPUT_ROOT / "eis_match_overrides.json"
-CAPACITY_MATCH_OVERRIDES_PATH = ANALYSIS_OUTPUT_ROOT / "capacity_match_overrides.json"
+DATA_ROOT = BATTERY_DATA_ROOT
+CAPACITY_ROOT = BATTERY_CAPACITY_ROOT
+EIS_ROOT = BATTERY_EIS_ROOT
+ANALYSIS_OUTPUT_ROOT = BATTERY_OUTPUT_ROOT
+EIS_MATCH_OVERRIDES_PATH = BATTERY_MATCH_EIS_JSON
+CAPACITY_MATCH_OVERRIDES_PATH = BATTERY_MATCH_CAPACITY_JSON
 OVERLAY_CACHE_LOCK = threading.Lock()
 OVERLAY_WARMING_KEYS: set[tuple[str, tuple[str, ...]]] = set()
 

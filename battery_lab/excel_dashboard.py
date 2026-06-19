@@ -17,8 +17,9 @@ from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
 from openpyxl.utils import column_index_from_string, get_column_letter
 
+from .config import BATTERY_CONDITION_WORKBOOK
 
-DEFAULT_CONDITION_WORKBOOK = Path("/Users/haesungjun/Downloads/Cell condition Calculation.xlsx")
+DEFAULT_CONDITION_WORKBOOK = BATTERY_CONDITION_WORKBOOK
 DEFAULT_CONDITION_SHEET = "JYJ"
 FILTER_RULES = {
     "참고": {"12파이_cufoil"},
