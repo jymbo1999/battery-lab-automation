@@ -80,6 +80,7 @@ def build_match_payload(
     risky_statuses = RISKY_EIS_STATUSES if kind == "eis" else RISKY_CAPACITY_STATUSES
     risky = [row for row in matches if row.get("status") in risky_statuses][:limit]
     editor_rows = candidate_editor_rows(kind, risky, overrides)
+    final_rows = final_review_rows(matches, overrides)
     return {
         "kind": kind,
         "condition_workbook": str(condition_workbook),
@@ -93,7 +94,9 @@ def build_match_payload(
         "condition_count": len(conditions),
         "status_counts": report.status_counts if report else {},
         "rows": editor_rows,
+        "final_rows": final_rows,
         "risky_count": len(risky),
+        "final_count": len(final_rows),
         "report_ready": report is not None,
     }
 
@@ -164,6 +167,136 @@ def save_match_selections(
     next_payload = build_match_payload(kind, source_root, condition_workbook, override_path, condition_sheet=condition_sheet)
     next_payload["saved_count"] = len(selected_by_file)
     return next_payload
+
+
+def save_match_review_actions(
+    kind: str,
+    source_root: Path,
+    condition_workbook: Path,
+    override_path: Path,
+    *,
+    selected_candidates: list[dict[str, Any]],
+    direct_matches: list[dict[str, Any]],
+    delete_files: list[dict[str, Any]],
+    condition_sheet: str | None = "JYJ",
+) -> dict[str, Any]:
+    payload = build_match_payload(kind, source_root, condition_workbook, override_path, condition_sheet=condition_sheet)
+    valid_rows = {
+        (row["file"], row["condition_key"]): row
+        for row in payload["rows"]
+        if row.get("file") and row.get("condition_key")
+    }
+    known_files = {row["relative_path"] for row in payload.get("final_rows", []) if row.get("relative_path")}
+    overrides = load_match_overrides(override_path)
+    saved = 0
+
+    seen_candidate_files: set[str] = set()
+    for selection in selected_candidates:
+        file_key = str(selection.get("file") or selection.get("relative_path") or "").strip()
+        condition_key = str(selection.get("condition_key") or "").strip()
+        if not file_key or not condition_key:
+            continue
+        if file_key in seen_candidate_files:
+            raise ValueError(f"Only one candidate can be selected for each file: {file_key}")
+        row = valid_rows.get((file_key, condition_key))
+        if row is None:
+            raise ValueError(f"Unknown match candidate: {file_key} -> {condition_key}")
+        overrides[file_key] = override_from_candidate_row(row)
+        seen_candidate_files.add(file_key)
+        saved += 1
+
+    conditions = read_conditions(condition_workbook, sheet_name=condition_sheet) if condition_workbook.exists() else {}
+    condition_rows = condition_index_by_row_number(conditions)
+    for item in direct_matches:
+        file_key = str(item.get("file") or item.get("relative_path") or "").strip()
+        raw_row_number = str(item.get("journal_row") or item.get("row_number") or "").strip()
+        if not file_key or not raw_row_number:
+            continue
+        if known_files and file_key not in known_files:
+            raise ValueError(f"Unknown source file: {file_key}")
+        try:
+            row_number = int(raw_row_number)
+        except ValueError as exc:
+            raise ValueError(f"Journal row must be a number for {file_key}: {raw_row_number}") from exc
+        condition_key, condition = condition_rows.get(row_number, ("", {}))
+        if not condition_key:
+            raise ValueError(f"Unknown journal row number: {row_number}")
+        overrides[file_key] = {
+            "condition_key": condition_key,
+            "journal_row": row_number,
+            "sample": condition.get("sample") or condition_key,
+            "date": condition.get("date") or "",
+            "selected_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            "selection_source": "review_direct_row",
+        }
+        saved += 1
+
+    for item in delete_files:
+        file_key = str(item.get("file") or item.get("relative_path") or "").strip()
+        if not file_key:
+            continue
+        if known_files and file_key not in known_files:
+            raise ValueError(f"Unknown source file: {file_key}")
+        overrides[file_key] = {
+            "action": "delete_file",
+            "delete_candidate": True,
+            "reason": str(item.get("reason") or "review_marked_delete"),
+            "selected_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            "selection_source": "review_stage_2",
+        }
+        saved += 1
+
+    save_match_overrides(override_path, overrides)
+    next_payload = build_match_payload(kind, source_root, condition_workbook, override_path, condition_sheet=condition_sheet)
+    next_payload["saved_count"] = saved
+    return next_payload
+
+
+def override_from_candidate_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "condition_key": row.get("condition_key"),
+        "journal_row": row.get("journal_row"),
+        "sample": row.get("sample"),
+        "date": row.get("date"),
+        "selected_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "selection_source": "review_candidate",
+    }
+
+
+def condition_index_by_row_number(conditions: dict[str, dict[str, Any]]) -> dict[int, tuple[str, dict[str, Any]]]:
+    rows: dict[int, tuple[str, dict[str, Any]]] = {}
+    for key, condition in conditions.items():
+        row_number = condition.get("_source_row_number")
+        if isinstance(row_number, int):
+            rows[row_number] = (key, condition)
+    return rows
+
+
+def final_review_rows(matches: list[dict[str, Any]], overrides: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for row in matches:
+        file_key = str(row.get("relative_path") or "")
+        override = overrides.get(file_key) or {}
+        action = str(override.get("action") or "")
+        override_condition = str(override.get("condition_key") or "")
+        rows.append(
+            {
+                "relative_path": file_key,
+                "source_name": row.get("source_name") or Path(file_key).name,
+                "status": "delete_candidate" if action == "delete_file" else row.get("status", ""),
+                "condition_key": override_condition or row.get("condition_key", ""),
+                "journal_row": override.get("journal_row") or row.get("journal_row") or "",
+                "sample": override.get("sample") or row.get("condition_sample") or "",
+                "date": override.get("date") or row.get("condition_date") or "",
+                "score": row.get("score", ""),
+                "margin": row.get("margin", ""),
+                "override_action": action,
+                "override_source": override.get("selection_source") or "",
+                "delete_candidate": action == "delete_file",
+                "reason": row.get("reason", ""),
+            }
+        )
+    return rows
 
 
 def candidate_editor_rows(kind: str, rows: list[dict[str, Any]], overrides: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:

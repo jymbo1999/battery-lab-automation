@@ -13,7 +13,7 @@ from .config import (
     BATTERY_OUTPUT_ROOT,
     BATTERY_STREAMLIT_URL,
 )
-from .matching_service import build_match_payload, save_match_overrides, save_match_selections
+from .matching_service import build_match_payload, save_match_overrides, save_match_review_actions, save_match_selections
 from .ai_service import ai_status_payload, get_ai_run, run_ai_smoke
 from .excel_dashboard import DEFAULT_CONDITION_SHEET, WorkbookStore, render_page as render_excel_dashboard_page
 from .job_service import (
@@ -200,6 +200,7 @@ def index():
             "files": "battery_lab.files",
             "eis": "battery_lab.eis",
             "capacity": "battery_lab.capacity",
+            "review_EIS_capacity": "battery_lab.review_eis_capacity",
             "voltage_profile": "battery_lab.settings",
         }
         endpoint = route_map.get(legacy_tab, "battery_lab.journal")
@@ -277,6 +278,15 @@ def capacity():
         "battery_lab/app.html",
         layout_template=current_app.config.get("BATTERY_LAB_LAYOUT_TEMPLATE", "battery_lab/standalone.html"),
         **_app_context("capacity"),
+    )
+
+
+@blueprint.route("/review_EIS_capacity")
+def review_eis_capacity():
+    return render_template(
+        "battery_lab/app.html",
+        layout_template=current_app.config.get("BATTERY_LAB_LAYOUT_TEMPLATE", "battery_lab/standalone.html"),
+        **_app_context("review_EIS_capacity"),
     )
 
 
@@ -386,6 +396,29 @@ def match_api(kind: str):
         return jsonify({"error": "selections must be a list"}), 400
     try:
         return jsonify(save_match_selections(kind, source_root, BATTERY_CONDITION_WORKBOOK, override_path, selections))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@blueprint.route("/api/<kind>/match-review", methods=["POST"])
+def match_review_api(kind: str):
+    config = _match_api_config(kind)
+    if config is None:
+        abort(404)
+    source_root, override_path = config
+    body = request.get_json(silent=True) or {}
+    try:
+        return jsonify(
+            save_match_review_actions(
+                kind,
+                source_root,
+                BATTERY_CONDITION_WORKBOOK,
+                override_path,
+                selected_candidates=body.get("selected_candidates") if isinstance(body.get("selected_candidates"), list) else [],
+                direct_matches=body.get("direct_matches") if isinstance(body.get("direct_matches"), list) else [],
+                delete_files=body.get("delete_files") if isinstance(body.get("delete_files"), list) else [],
+            )
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 

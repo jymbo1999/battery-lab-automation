@@ -68,6 +68,17 @@
   .battery-match-table tr.selected { background: #eef6ff; }
   .battery-match-table td.reason { max-width: 260px; }
   .battery-match-message { margin-top: 8px; font-size: 13px; color: #526071; }
+  .battery-review-flow { display: grid; gap: 14px; }
+  .battery-review-kind { border: 1px solid #d8dee8; border-radius: 8px; padding: 14px; background: #fbfcfe; }
+  .battery-review-kind h3 { margin: 0 0 4px; font-size: 17px; }
+  .battery-review-steps { display: grid; gap: 12px; margin-top: 12px; }
+  .battery-review-step { border: 1px solid #d8dee8; border-radius: 8px; padding: 12px; background: #fff; }
+  .battery-review-step h4 { margin: 0 0 8px; font-size: 15px; }
+  .battery-review-step-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+  .battery-review-direct-grid { display: grid; gap: 8px; }
+  .battery-review-direct-row { display: grid; grid-template-columns: minmax(0, 1fr) 120px 120px; gap: 8px; align-items: center; border-bottom: 1px solid #edf0f4; padding: 7px 0; font-size: 12px; }
+  .battery-review-direct-row input[type="number"] { min-height: 32px; border: 1px solid #a8b3c2; border-radius: 7px; padding: 5px 8px; }
+  .battery-review-direct-row label { display: inline-flex; align-items: center; gap: 6px; }
   .battery-job-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
   .battery-job-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .battery-job-table th, .battery-job-table td { border: 1px solid #d8dee8; padding: 7px; text-align: left; vertical-align: top; }
@@ -101,6 +112,7 @@
       <div class="battery-nav-label">분석</div>
       <a class="{% if page == 'eis' %}active{% endif %}" href="{{ url_for('battery_lab.eis') }}">EIS</a>
       <a class="{% if page == 'capacity' %}active{% endif %}" href="{{ url_for('battery_lab.capacity') }}">Capacity</a>
+      <a class="{% if page == 'review_EIS_capacity' %}active{% endif %}" href="{{ url_for('battery_lab.review_eis_capacity') }}">매칭 검토</a>
       <div class="battery-nav-label">운영</div>
       <a class="{% if page == 'jobs' %}active{% endif %}" href="{{ url_for('battery_lab.jobs') }}">Jobs</a>
       <a class="{% if page == 'settings' %}active{% endif %}" href="{{ url_for('battery_lab.settings') }}">Settings</a>
@@ -255,18 +267,9 @@
         <div class="battery-panel-head">
           <div>
             <h2>EIS 수동 매칭</h2>
-            <div class="battery-muted">확인 필요 파일을 실험일지 후보와 수동으로 연결합니다. 저장은 기존 JSON override와 호환됩니다.</div>
+            <div class="battery-muted">EIS/Capacity 매칭 검토는 전용 페이지에서 1차 후보 선택, 미선택 파일 정리, 최종 검토 순서로 처리합니다.</div>
           </div>
-        </div>
-        <div class="battery-match" data-kind="eis" data-api-url="{{ url_for('battery_lab.match_api', kind='eis') }}">
-          <div class="battery-match-summary" data-role="summary"></div>
-          <div class="battery-match-actions">
-            <button class="battery-btn primary" type="button" data-role="save">선택 저장</button>
-            <button class="battery-btn" type="button" data-role="reload">새로고침</button>
-            <button class="battery-btn" type="button" data-role="clear">수동 매칭 전체 해제</button>
-          </div>
-          <div class="battery-match-scroll" data-role="table"></div>
-          <div class="battery-match-message" data-role="message">불러오는 중...</div>
+          <a class="battery-btn primary" href="{{ url_for('battery_lab.review_eis_capacity') }}">매칭 검토 열기</a>
         </div>
       </section>
 
@@ -378,18 +381,107 @@
         <div class="battery-panel-head">
           <div>
             <h2>Capacity 수동 매칭</h2>
-            <div class="battery-muted">파일명 행번호와 후보 실험일지 row를 확인하고 수동 override를 저장합니다.</div>
+            <div class="battery-muted">EIS/Capacity 매칭 검토는 전용 페이지에서 1차 후보 선택, 미선택 파일 정리, 최종 검토 순서로 처리합니다.</div>
           </div>
+          <a class="battery-btn primary" href="{{ url_for('battery_lab.review_eis_capacity') }}">매칭 검토 열기</a>
         </div>
-        <div class="battery-match" data-kind="capacity" data-api-url="{{ url_for('battery_lab.match_api', kind='capacity') }}">
-          <div class="battery-match-summary" data-role="summary"></div>
-          <div class="battery-match-actions">
-            <button class="battery-btn primary" type="button" data-role="save">선택 저장</button>
-            <button class="battery-btn" type="button" data-role="reload">새로고침</button>
-            <button class="battery-btn" type="button" data-role="clear">수동 매칭 전체 해제</button>
+      </section>
+
+    {% elif page == 'review_EIS_capacity' %}
+      <section class="battery-panel">
+        <div class="battery-panel-head">
+          <div>
+            <h2>EIS / Capacity 수동 매칭 검토</h2>
+            <div class="battery-muted">1단계에서 자동 후보를 선택하고, 2단계에서 남은 파일을 실험일지 행번호 직접 입력 또는 삭제 대상으로 정리한 뒤, 3단계에서 전체 매칭 결과를 검토합니다.</div>
           </div>
-          <div class="battery-match-scroll" data-role="table"></div>
-          <div class="battery-match-message" data-role="message">불러오는 중...</div>
+          <a class="battery-btn" href="{{ url_for('battery_lab.journal') }}">실험 일지 열기</a>
+        </div>
+        <div class="battery-review-flow">
+          <div class="battery-review-kind" data-kind="eis" data-match-url="{{ url_for('battery_lab.match_api', kind='eis') }}" data-review-url="{{ url_for('battery_lab.match_review_api', kind='eis') }}">
+            <div class="battery-panel-head">
+              <div>
+                <h3>EIS 매칭</h3>
+                <div class="battery-muted">후보 셀 row 중 맞는 항목을 체크하고 저장합니다. 후보에 없으면 2단계에서 행번호를 직접 입력합니다.</div>
+              </div>
+              <button class="battery-btn" type="button" data-role="reload">새로고침</button>
+            </div>
+            <div class="battery-match-summary" data-role="summary"></div>
+            <div class="battery-review-steps">
+              <div class="battery-review-step">
+                <div class="battery-review-step-head">
+                  <div>
+                    <h4>1단계 · 후보 체크</h4>
+                    <div class="battery-muted">파일마다 하나의 후보만 선택할 수 있습니다. 선택하지 않은 파일은 2단계로 넘어갑니다.</div>
+                  </div>
+                  <button class="battery-btn primary" type="button" data-role="save-stage-1">1단계 저장</button>
+                </div>
+                <div class="battery-match-scroll" data-role="stage-1"></div>
+              </div>
+              <div class="battery-review-step">
+                <div class="battery-review-step-head">
+                  <div>
+                    <h4>2단계 · 미선택 파일 정리</h4>
+                    <div class="battery-muted">후보가 없거나 선택하지 않은 파일은 실험일지 행번호를 직접 입력하거나 삭제 대상으로 표시합니다.</div>
+                  </div>
+                  <button class="battery-btn primary" type="button" data-role="save-stage-2">2단계 저장</button>
+                </div>
+                <div class="battery-review-direct-grid" data-role="stage-2"></div>
+              </div>
+              <div class="battery-review-step">
+                <div class="battery-review-step-head">
+                  <div>
+                    <h4>3단계 · 최종 검토</h4>
+                    <div class="battery-muted">현재 override와 자동 매칭을 합친 전체 파일 매칭 상태입니다.</div>
+                  </div>
+                </div>
+                <div class="battery-match-scroll" data-role="stage-3"></div>
+              </div>
+            </div>
+            <div class="battery-match-message" data-role="message">불러오는 중...</div>
+          </div>
+
+          <div class="battery-review-kind" data-kind="capacity" data-match-url="{{ url_for('battery_lab.match_api', kind='capacity') }}" data-review-url="{{ url_for('battery_lab.match_review_api', kind='capacity') }}">
+            <div class="battery-panel-head">
+              <div>
+                <h3>Capacity 매칭</h3>
+                <div class="battery-muted">Capacity summary 파일과 실험일지 후보 row를 검토합니다. 파일명 앞 행번호가 있으면 2단계 직접 입력에 활용할 수 있습니다.</div>
+              </div>
+              <button class="battery-btn" type="button" data-role="reload">새로고침</button>
+            </div>
+            <div class="battery-match-summary" data-role="summary"></div>
+            <div class="battery-review-steps">
+              <div class="battery-review-step">
+                <div class="battery-review-step-head">
+                  <div>
+                    <h4>1단계 · 후보 체크</h4>
+                    <div class="battery-muted">파일마다 하나의 후보만 선택할 수 있습니다. 선택하지 않은 파일은 2단계로 넘어갑니다.</div>
+                  </div>
+                  <button class="battery-btn primary" type="button" data-role="save-stage-1">1단계 저장</button>
+                </div>
+                <div class="battery-match-scroll" data-role="stage-1"></div>
+              </div>
+              <div class="battery-review-step">
+                <div class="battery-review-step-head">
+                  <div>
+                    <h4>2단계 · 미선택 파일 정리</h4>
+                    <div class="battery-muted">후보가 없거나 선택하지 않은 파일은 실험일지 행번호를 직접 입력하거나 삭제 대상으로 표시합니다.</div>
+                  </div>
+                  <button class="battery-btn primary" type="button" data-role="save-stage-2">2단계 저장</button>
+                </div>
+                <div class="battery-review-direct-grid" data-role="stage-2"></div>
+              </div>
+              <div class="battery-review-step">
+                <div class="battery-review-step-head">
+                  <div>
+                    <h4>3단계 · 최종 검토</h4>
+                    <div class="battery-muted">현재 override와 자동 매칭을 합친 전체 파일 매칭 상태입니다.</div>
+                  </div>
+                </div>
+                <div class="battery-match-scroll" data-role="stage-3"></div>
+              </div>
+            </div>
+            <div class="battery-match-message" data-role="message">불러오는 중...</div>
+          </div>
         </div>
       </section>
 
@@ -801,6 +893,286 @@
       launcher.querySelectorAll("[data-job-type]").forEach((button) => {
         button.addEventListener("click", () => launchJob(launcher, button).catch((error) => setMessage(launcher, error.message)));
       });
+    });
+  })();
+</script>
+<script>
+  (() => {
+    const reviewPanels = Array.from(document.querySelectorAll(".battery-review-kind"));
+    if (!reviewPanels.length) return;
+
+    const text = (value) => value === null || value === undefined || value === "" ? "-" : String(value);
+
+    function setMessage(panel, message) {
+      panel.querySelector('[data-role="message"]').textContent = message;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      }[char]));
+    }
+
+    function renderSummary(panel, payload) {
+      const summary = panel.querySelector('[data-role="summary"]');
+      const counts = payload.status_counts || {};
+      const statusText = Object.keys(counts).sort().map((key) => `${key}: ${counts[key]}`).join(" · ") || "status 없음";
+      summary.innerHTML = "";
+      [
+        `source ${payload.source_count || 0}`,
+        `journal rows ${payload.condition_count || 0}`,
+        `candidate rows ${(payload.rows || []).length}`,
+        `final rows ${payload.final_count || 0}`,
+        `overrides ${payload.override_count || 0}`,
+        statusText,
+      ].forEach((item) => {
+        const pill = document.createElement("span");
+        pill.className = "battery-pill";
+        pill.textContent = item;
+        summary.appendChild(pill);
+      });
+    }
+
+    function uniqueCandidateFiles(payload) {
+      const files = [];
+      const seen = new Set();
+      (payload.rows || []).forEach((row) => {
+        const file = row.file || row.relative_path || "";
+        if (file && !seen.has(file)) {
+          seen.add(file);
+          files.push(file);
+        }
+      });
+      return files;
+    }
+
+    function firstCandidateByFile(payload) {
+      const map = new Map();
+      (payload.rows || []).forEach((row) => {
+        const file = row.file || row.relative_path || "";
+        if (file && !map.has(file)) map.set(file, row);
+      });
+      return map;
+    }
+
+    function renderStage1(panel, rows) {
+      const tableBox = panel.querySelector('[data-role="stage-1"]');
+      if (!rows.length) {
+        tableBox.innerHTML = '<div class="battery-empty">확인할 자동 후보가 없습니다. 3단계 최종 표에서 현재 상태를 확인하세요.</div>';
+        return;
+      }
+      const showRowPrefix = panel.dataset.kind === "capacity";
+      const table = document.createElement("table");
+      table.className = "battery-match-table";
+      const headers = ["선택", "파일"];
+      if (showRowPrefix) headers.push("파일 행번호");
+      headers.push("후보", "날짜 차이", "단서", "score", "margin", "상태", "확인 이유");
+      table.innerHTML = `<thead><tr>${headers.map((head) => `<th>${escapeHtml(head)}</th>`).join("")}</tr></thead><tbody></tbody>`;
+      const tbody = table.querySelector("tbody");
+      rows.forEach((row) => {
+        const tr = document.createElement("tr");
+        const hasCandidate = Boolean(row.condition_key);
+        if (row.selected && hasCandidate) tr.classList.add("selected");
+        const cells = [
+          `<input type="checkbox" data-stage1-choice ${row.selected && hasCandidate ? "checked" : ""} ${hasCandidate ? "" : "disabled"} aria-label="candidate 선택">`,
+          `<code>${escapeHtml(row.file_label || row.file || "")}</code>`,
+        ];
+        if (showRowPrefix) cells.push(escapeHtml(text(row.row_prefix)));
+        cells.push(
+          `<strong>${escapeHtml(text(row.sample))}</strong><br><span class="battery-muted">행 ${escapeHtml(text(row.journal_row))} · ${escapeHtml(text(row.date))}</span>`,
+          escapeHtml(text(row.date_delta)),
+          escapeHtml(text(row.overlap_tokens)),
+          escapeHtml(text(row.score)),
+          escapeHtml(text(row.margin)),
+          escapeHtml(text(row.status)),
+          `<span>${escapeHtml(text(row.reason))}</span>`
+        );
+        tr.innerHTML = cells.map((cell, index) => `<td class="${index === cells.length - 1 ? "reason" : ""}">${cell}</td>`).join("");
+        tr.__matchRow = row;
+        tr.addEventListener("click", (event) => {
+          if (event.target && event.target.matches("a, button, input")) return;
+          const checkbox = tr.querySelector("[data-stage1-choice]");
+          checkbox.checked = !checkbox.checked;
+          enforceOneCandidatePerFile(panel, checkbox);
+          refreshStage1Rows(table);
+        });
+        tr.querySelector("[data-stage1-choice]").addEventListener("change", (event) => {
+          enforceOneCandidatePerFile(panel, event.target);
+          refreshStage1Rows(table);
+        });
+        tbody.appendChild(tr);
+      });
+      tableBox.replaceChildren(table);
+    }
+
+    function enforceOneCandidatePerFile(panel, changedCheckbox) {
+      if (!changedCheckbox.checked) return;
+      const row = changedCheckbox.closest("tr").__matchRow;
+      const file = row.file || row.relative_path || "";
+      panel.querySelectorAll("[data-stage1-choice]").forEach((checkbox) => {
+        const otherRow = checkbox.closest("tr").__matchRow;
+        if (checkbox !== changedCheckbox && (otherRow.file || otherRow.relative_path || "") === file) {
+          checkbox.checked = false;
+        }
+      });
+    }
+
+    function refreshStage1Rows(table) {
+      table.querySelectorAll("tbody tr").forEach((tr) => {
+        const checkbox = tr.querySelector("[data-stage1-choice]");
+        tr.classList.toggle("selected", Boolean(checkbox && checkbox.checked));
+      });
+    }
+
+    function collectStage1Selections(panel) {
+      return Array.from(panel.querySelectorAll("[data-stage1-choice]"))
+        .filter((checkbox) => checkbox.checked)
+        .map((checkbox) => checkbox.closest("tr").__matchRow)
+        .filter((row) => row && row.condition_key)
+        .filter(Boolean);
+    }
+
+    function renderStage2(panel, files) {
+      const box = panel.querySelector('[data-role="stage-2"]');
+      const payload = panel.__matchPayload || {};
+      const candidateMap = firstCandidateByFile(payload);
+      if (!files.length) {
+        box.innerHTML = '<div class="battery-empty">1단계에서 남은 파일이 없습니다.</div>';
+        return;
+      }
+      box.innerHTML = files.map((file) => {
+        const first = candidateMap.get(file) || {};
+        const hint = first.row_prefix ? `파일 행번호 ${escapeHtml(first.row_prefix)}` : "행번호 직접 입력";
+        return `
+          <div class="battery-review-direct-row" data-file="${escapeHtml(file)}">
+            <div><code>${escapeHtml(file)}</code><div class="battery-muted">${hint}</div></div>
+            <input type="number" min="1" step="1" data-direct-row placeholder="journal row">
+            <label><input type="checkbox" data-delete-file>삭제 후보</label>
+          </div>`;
+      }).join("");
+      box.querySelectorAll("[data-delete-file]").forEach((checkbox) => {
+        checkbox.addEventListener("change", () => {
+          const rowInput = checkbox.closest(".battery-review-direct-row").querySelector("[data-direct-row]");
+          rowInput.disabled = checkbox.checked;
+          if (checkbox.checked) rowInput.value = "";
+        });
+      });
+    }
+
+    function renderStage3(panel, rows) {
+      const tableBox = panel.querySelector('[data-role="stage-3"]');
+      if (!rows.length) {
+        tableBox.innerHTML = '<div class="battery-empty">최종 검토할 파일이 없습니다.</div>';
+        return;
+      }
+      const table = document.createElement("table");
+      table.className = "battery-match-table";
+      const headers = ["파일", "상태", "실험일지 행", "Sample", "Date", "Condition key", "Override", "score", "margin", "확인"];
+      table.innerHTML = `<thead><tr>${headers.map((head) => `<th>${escapeHtml(head)}</th>`).join("")}</tr></thead><tbody></tbody>`;
+      const tbody = table.querySelector("tbody");
+      rows.forEach((row) => {
+        const tr = document.createElement("tr");
+        if (row.delete_candidate) tr.classList.add("selected");
+        tr.innerHTML = `
+          <td><code>${escapeHtml(row.relative_path || row.source_name || "")}</code></td>
+          <td>${escapeHtml(text(row.status))}</td>
+          <td>${escapeHtml(text(row.journal_row))}</td>
+          <td>${escapeHtml(text(row.sample))}</td>
+          <td>${escapeHtml(text(row.date))}</td>
+          <td>${escapeHtml(text(row.condition_key))}</td>
+          <td>${escapeHtml(text(row.override_source || row.override_action))}</td>
+          <td>${escapeHtml(text(row.score))}</td>
+          <td>${escapeHtml(text(row.margin))}</td>
+          <td class="reason">${escapeHtml(text(row.reason))}</td>`;
+        tbody.appendChild(tr);
+      });
+      tableBox.replaceChildren(table);
+    }
+
+    function renderPanel(panel, payload) {
+      panel.__matchPayload = payload;
+      renderSummary(panel, payload);
+      renderStage1(panel, payload.rows || []);
+      renderStage3(panel, payload.final_rows || []);
+      const selectedFiles = new Set(collectStage1Selections(panel).map((row) => row.file || row.relative_path || ""));
+      const remaining = uniqueCandidateFiles(payload).filter((file) => !selectedFiles.has(file));
+      panel.__stage2Files = remaining;
+      renderStage2(panel, remaining);
+    }
+
+    async function loadPanel(panel) {
+      setMessage(panel, "매칭 후보를 불러오는 중...");
+      const response = await fetch(panel.dataset.matchUrl, {headers: {"Accept": "application/json"}});
+      const payload = await response.json();
+      renderPanel(panel, payload);
+      if (!payload.condition_workbook_exists) {
+        setMessage(panel, `조건표 파일이 없습니다: ${payload.condition_workbook}`);
+      } else if (!payload.report_ready) {
+        setMessage(panel, "조건표 또는 원본 파일이 없어 매칭 report를 만들지 않았습니다.");
+      } else {
+        setMessage(panel, "1단계 후보를 선택한 뒤 저장하세요. 선택하지 않은 파일은 2단계에 표시됩니다.");
+      }
+    }
+
+    async function postReview(panel, body, successMessage) {
+      setMessage(panel, "저장 중...");
+      const response = await fetch(panel.dataset.reviewUrl, {
+        method: "POST",
+        headers: {"Accept": "application/json", "Content-Type": "application/json"},
+        body: JSON.stringify(body),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(panel, payload.error || "저장하지 못했습니다.");
+        return null;
+      }
+      panel.__matchPayload = payload;
+      renderSummary(panel, payload);
+      renderStage3(panel, payload.final_rows || []);
+      setMessage(panel, `${successMessage}: ${payload.saved_count || 0}개`);
+      return payload;
+    }
+
+    async function saveStage1(panel) {
+      const selected = collectStage1Selections(panel);
+      const selectedFiles = new Set(selected.map((row) => row.file || row.relative_path || ""));
+      const remaining = uniqueCandidateFiles(panel.__matchPayload || {}).filter((file) => !selectedFiles.has(file));
+      const payload = await postReview(panel, {selected_candidates: selected, direct_matches: [], delete_files: []}, "1단계 저장 완료");
+      if (!payload) return;
+      panel.__stage2Files = remaining;
+      renderStage2(panel, remaining);
+    }
+
+    async function saveStage2(panel) {
+      const directMatches = [];
+      const deleteFiles = [];
+      panel.querySelectorAll(".battery-review-direct-row").forEach((row) => {
+        const file = row.dataset.file || "";
+        const deleteChecked = row.querySelector("[data-delete-file]").checked;
+        const journalRow = row.querySelector("[data-direct-row]").value.trim();
+        if (deleteChecked) {
+          deleteFiles.push({file, reason: "review_marked_delete"});
+        } else if (journalRow) {
+          directMatches.push({file, journal_row: Number(journalRow)});
+        }
+      });
+      const payload = await postReview(panel, {selected_candidates: [], direct_matches: directMatches, delete_files: deleteFiles}, "2단계 저장 완료");
+      if (!payload) return;
+      const resolvedFiles = new Set(directMatches.map((item) => item.file).concat(deleteFiles.map((item) => item.file)));
+      const remaining = (panel.__stage2Files || []).filter((file) => !resolvedFiles.has(file));
+      panel.__stage2Files = remaining;
+      renderStage2(panel, remaining);
+    }
+
+    reviewPanels.forEach((panel) => {
+      panel.querySelector('[data-role="reload"]').addEventListener("click", () => loadPanel(panel).catch((error) => setMessage(panel, error.message)));
+      panel.querySelector('[data-role="save-stage-1"]').addEventListener("click", () => saveStage1(panel).catch((error) => setMessage(panel, error.message)));
+      panel.querySelector('[data-role="save-stage-2"]').addEventListener("click", () => saveStage2(panel).catch((error) => setMessage(panel, error.message)));
+      loadPanel(panel).catch((error) => setMessage(panel, error.message));
     });
   })();
 </script>

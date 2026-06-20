@@ -57,6 +57,7 @@ class BatteryRouteTests(unittest.TestCase):
                     "/battery/journal",
                     "/battery/eis",
                     "/battery/capacity",
+                    "/battery/review_EIS_capacity",
                     "/battery/files",
                     "/battery/jobs",
                     "/battery/settings",
@@ -80,6 +81,12 @@ class BatteryRouteTests(unittest.TestCase):
                 self.assertIn("/battery/artifact/capacity/c.svg", capacity_response.get_data(as_text=True))
                 self.assertIn("WRD/raw source preview", capacity_response.get_data(as_text=True))
                 self.assertIn("/battery/api/capacity/finder", capacity_response.get_data(as_text=True))
+
+                review_response = client.get("/battery/review_EIS_capacity")
+                review_html = review_response.get_data(as_text=True)
+                self.assertIn("EIS / Capacity 수동 매칭 검토", review_html)
+                self.assertIn("/battery/api/eis/match-review", review_html)
+                self.assertIn("/battery/api/capacity/match-review", review_html)
 
     def test_legacy_query_tab_redirects_to_named_route(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -209,6 +216,47 @@ class BatteryRouteTests(unittest.TestCase):
 
                 data = json.loads(override_path.read_text(encoding="utf-8"))
                 self.assertEqual(data["260522/1.5act_3T_0.5C_024_Capacity.csv"]["condition_key"], "1.5 act 3T")
+
+    def test_match_review_api_saves_direct_rows_and_delete_candidates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "battery"
+            eis_file = root / "EIS" / "260521" / "0hr" / "1.5act 3T_01.SEO"
+            bad_file = root / "EIS" / "260521" / "0hr" / "bad_file.SEO"
+            eis_file.parent.mkdir(parents=True)
+            eis_file.write_text("placeholder", encoding="utf-8")
+            bad_file.write_text("placeholder", encoding="utf-8")
+            condition_path = root / "Project_Abstract" / "conditions.csv"
+            condition_path.parent.mkdir(parents=True)
+            condition_path.write_text(
+                "Sample,date,Binder,Voltage range,ratio,Areal mass density\n"
+                "1.5 act 3T_1,260521,CMC/SBR,0.01~2V,0.95,7.1\n"
+                "1.5 act 3T_2,260521,CMC/SBR,0.01~2V,0.95,7.1\n",
+                encoding="utf-8",
+            )
+            override_path = root / "battery_visual_outputs" / "eis_match_overrides.json"
+
+            client, stack = self.patched_client(root)
+            with stack, patch.object(routes, "BATTERY_CONDITION_WORKBOOK", condition_path), patch.object(routes, "BATTERY_MATCH_EIS_JSON", override_path):
+                payload = client.get("/battery/api/eis/matches").get_json()
+                self.assertTrue(payload["report_ready"])
+                self.assertIn("260521/0hr/1.5act 3T_01.SEO", {row["relative_path"] for row in payload["final_rows"]})
+
+                response = client.post(
+                    "/battery/api/eis/match-review",
+                    json={
+                        "direct_matches": [{"file": "260521/0hr/1.5act 3T_01.SEO", "journal_row": 3}],
+                        "delete_files": [{"file": "260521/0hr/bad_file.SEO", "reason": "wrong_source"}],
+                    },
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.get_json()["saved_count"], 2)
+
+                data = json.loads(override_path.read_text(encoding="utf-8"))
+                self.assertEqual(data["260521/0hr/1.5act 3T_01.SEO"]["condition_key"], "1.5 act 3T_2")
+                self.assertEqual(data["260521/0hr/1.5act 3T_01.SEO"]["journal_row"], 3)
+                self.assertEqual(data["260521/0hr/1.5act 3T_01.SEO"]["selection_source"], "review_direct_row")
+                self.assertTrue(data["260521/0hr/bad_file.SEO"]["delete_candidate"])
+                self.assertEqual(data["260521/0hr/bad_file.SEO"]["action"], "delete_file")
 
 
 if __name__ == "__main__":
