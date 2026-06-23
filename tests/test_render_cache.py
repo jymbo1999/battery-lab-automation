@@ -234,3 +234,17 @@ def test_register_sources_is_callable_and_safe(tmp_path, monkeypatch):
     # No-op-safe hook for Phase 2 upload to call; must never raise.
     render_cache.register_sources("eis", ["does/not/exist.seo"])
     render_cache.register_sources("capacity", [])
+
+
+def test_file_identity_and_membersig_tolerate_missing_file(tmp_path):
+    # Cache is best-effort (spec §6): a member deleted between report-build and
+    # key computation must not raise / 500 — it gets a sentinel identity instead.
+    root = tmp_path
+    missing = root / "gone.csv"
+    ident = render_cache.file_identity(missing, root)
+    assert ident == ["gone.csv", -1, -1]
+
+    present = root / "here.csv"
+    present.write_text("x", encoding="utf-8")
+    sig = render_cache.membersig([present, missing], root)
+    assert isinstance(sig, str) and len(sig) == 40

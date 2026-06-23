@@ -50,12 +50,19 @@ def _sha1(obj: Any) -> str:
 
 
 def file_identity(path: Path, root: Path) -> list:
-    st = path.stat()
+    try:
+        st = path.stat()
+        mtime_ns, size = st.st_mtime_ns, st.st_size
+    except OSError:
+        # Best-effort (spec §6): a file deleted/unreadable mid-request gets a
+        # sentinel identity so membersig never raises. It re-keys once the file
+        # reappears.
+        mtime_ns, size = -1, -1
     try:
         rel = str(path.resolve().relative_to(root.resolve()))
     except ValueError:
         rel = str(path)
-    return [rel, st.st_mtime_ns, st.st_size]
+    return [rel, mtime_ns, size]
 
 
 def membersig(paths: list[Path], root: Path) -> str:
