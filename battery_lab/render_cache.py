@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import uuid
 from dataclasses import asdict
 from pathlib import Path
@@ -129,3 +130,50 @@ def cached_read_conditions(workbook: Path) -> dict:
     conditions = _read_conditions(workbook)
     _atomic_write_json(path, conditions)
     return conditions
+
+
+def _safe_id(cluster_id: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", str(cluster_id))[:80] or "_"
+
+
+def _flags_key(flags: dict) -> str:
+    return _sha1(flags)[:8]
+
+
+def _cluster_dir(kind: str, mode: str, cluster_id: str) -> Path:
+    return _cache_root() / "clusters" / kind / mode / _safe_id(cluster_id)
+
+
+def _cluster_path(kind: str, mode: str, cluster_id: str, member_sig: str, flags: dict) -> Path:
+    return _cluster_dir(kind, mode, cluster_id) / f"{member_sig}__{_flags_key(flags)}.json"
+
+
+def cluster_cache_get(kind, mode, cluster_id, member_sig, ctx_hash, flags) -> dict | None:
+    if _disabled():
+        return None
+    # ctx_hash is part of identity but does not affect the filename; fold it into a guard field.
+    cached = _read_json(_cluster_path(kind, mode, cluster_id, member_sig, flags))
+    if cached is None or cached.get("_ctx") != ctx_hash:
+        return None
+    payload = dict(cached)
+    payload.pop("_ctx", None)
+    return payload
+
+
+def cluster_cache_put(kind, mode, cluster_id, member_sig, ctx_hash, flags, payload: dict) -> None:
+    if _disabled():
+        return
+    record = dict(payload)
+    record["_ctx"] = ctx_hash
+    path = _cluster_path(kind, mode, cluster_id, member_sig, flags)
+    _atomic_write_json(path, record)
+    _gc_cluster_dir(path.parent, keep_prefix=f"{member_sig}__")
+
+
+def _gc_cluster_dir(cluster_dir: Path, keep_prefix: str) -> None:
+    try:
+        for entry in cluster_dir.glob("*.json"):
+            if not entry.name.startswith(keep_prefix):
+                entry.unlink(missing_ok=True)
+    except OSError:
+        pass

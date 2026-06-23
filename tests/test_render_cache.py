@@ -133,3 +133,23 @@ def test_cached_read_conditions_reads_once(tmp_path, monkeypatch):
 def test_cached_read_conditions_missing_returns_empty(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "BATTERY_OUTPUT_ROOT", tmp_path)
     assert render_cache.cached_read_conditions(tmp_path / "absent.xlsx") == {}
+
+
+def test_cluster_cache_put_get_and_gc(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "BATTERY_OUTPUT_ROOT", tmp_path)
+    flags = {"show_fit": False}
+    payload_v1 = {"available": True, "html": "<svg>v1</svg>", "errors": [], "title": "C001"}
+
+    assert render_cache.cluster_cache_get("eis", "comparison", "C001", "sigAAA", "ctx", flags) is None
+    render_cache.cluster_cache_put("eis", "comparison", "C001", "sigAAA", "ctx", flags, payload_v1)
+    assert render_cache.cluster_cache_get("eis", "comparison", "C001", "sigAAA", "ctx", flags) == payload_v1
+
+    # new membersig (a file changed) -> miss, and GC drops the stale sig file
+    payload_v2 = {"available": True, "html": "<svg>v2</svg>", "errors": [], "title": "C001"}
+    assert render_cache.cluster_cache_get("eis", "comparison", "C001", "sigBBB", "ctx", flags) is None
+    render_cache.cluster_cache_put("eis", "comparison", "C001", "sigBBB", "ctx", flags, payload_v2)
+
+    cluster_dir = render_cache._cluster_dir("eis", "comparison", "C001")
+    remaining = sorted(p.name for p in cluster_dir.glob("*.json"))
+    assert all(name.startswith("sigBBB__") for name in remaining)
+    assert len(remaining) == 1
