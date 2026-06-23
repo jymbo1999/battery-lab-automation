@@ -285,9 +285,20 @@ def capacity_overlay_payload(
         if not selected_paths:
             return {"available": False, "html": "", "errors": ["표시할 Capacity summary source가 없습니다."], "title": title}
 
+        member_paths = [capacity_root / rel for rel in selected_paths]
+        flags: dict = {}
+        ctx = render_cache.context_hash(condition_workbook, override_path)
+        msig = render_cache.membersig(member_paths, capacity_root)
+        cache_id = key or f"{mode}:all"
+        cached = render_cache.cluster_cache_get("capacity", mode, cache_id, msig, ctx, flags)
+        if cached is not None:
+            return cached
+
         series, errors = streamlit_ui.load_capacity_overlay_series(selected_paths, report, conditions, performance_mode=performance_mode)
         html_doc = streamlit_ui.capacity_overlay_html(title, series, width=1180, height=590, performance_mode=performance_mode)
-        return {"available": bool(html_doc), "html": html_doc, "errors": errors, "title": title, "series_count": len(series)}
+        payload = {"available": bool(html_doc), "html": html_doc, "errors": errors, "title": title, "series_count": len(series)}
+        render_cache.cluster_cache_put("capacity", mode, cache_id, msig, ctx, flags, payload)
+        return payload
 
 
 def eis_source_payload(eis_root: Path, capacity_root: Path, rel_path: str, *, show_fit: bool = False) -> dict[str, Any]:

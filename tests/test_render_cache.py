@@ -179,3 +179,25 @@ def test_eis_overlay_payload_renders_once(tmp_path, monkeypatch):
     p2 = viewer_service.eis_overlay_payload(*args, **kwargs)
     assert calls["n"] == 1                 # second call served from cluster cache
     assert p1 == p2
+
+
+def test_capacity_overlay_payload_renders_once(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "BATTERY_OUTPUT_ROOT", tmp_path)
+    battery_ui.parse_file_cached_by_mtime.cache_clear()
+
+    calls = {"n": 0}
+    real_html = battery_ui.capacity_overlay_html
+
+    def counting_html(*args, **kwargs):
+        calls["n"] += 1
+        return real_html(*args, **kwargs)
+
+    monkeypatch.setattr(battery_ui, "capacity_overlay_html", counting_html)
+
+    args = (SAMPLE_DATA, SAMPLE_DATA, SAMPLE_DATA / "cell_conditions.csv", tmp_path / "ov.json")
+    kwargs = dict(mode="cluster", key="")
+
+    p1 = viewer_service.capacity_overlay_payload(*args, **kwargs)
+    p2 = viewer_service.capacity_overlay_payload(*args, **kwargs)
+    assert calls["n"] == 1
+    assert p1 == p2
