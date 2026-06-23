@@ -201,3 +201,29 @@ def test_capacity_overlay_payload_renders_once(tmp_path, monkeypatch):
     p2 = viewer_service.capacity_overlay_payload(*args, **kwargs)
     assert calls["n"] == 1
     assert p1 == p2
+
+
+def test_cache_output_matches_uncached(tmp_path, monkeypatch):
+    args = (SAMPLE_DATA, SAMPLE_DATA, SAMPLE_DATA / "cell_conditions.csv", tmp_path / "ov.json")
+    kwargs = dict(mode="comparison", key="", show_fit=False)
+
+    monkeypatch.setenv("BATTERY_RENDER_CACHE_DISABLE", "1")
+    battery_ui.parse_file_cached_by_mtime.cache_clear()
+    uncached = viewer_service.eis_overlay_payload(*args, **kwargs)
+
+    monkeypatch.setenv("BATTERY_RENDER_CACHE_DISABLE", "0")
+    monkeypatch.setattr(config, "BATTERY_OUTPUT_ROOT", tmp_path)
+    battery_ui.parse_file_cached_by_mtime.cache_clear()
+    cached = viewer_service.eis_overlay_payload(*args, **kwargs)
+
+    assert cached["html"] == uncached["html"]
+
+
+def test_context_change_invalidates_cluster(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "BATTERY_OUTPUT_ROOT", tmp_path)
+    flags = {"show_fit": False}
+    payload = {"available": True, "html": "<svg/>", "errors": [], "title": "C001"}
+    render_cache.cluster_cache_put("eis", "comparison", "C001", "sig", "ctxOLD", flags, payload)
+    # same key/sig but a different context (workbook changed) must miss:
+    assert render_cache.cluster_cache_get("eis", "comparison", "C001", "sig", "ctxNEW", flags) is None
+    assert render_cache.cluster_cache_get("eis", "comparison", "C001", "sig", "ctxOLD", flags) == payload
