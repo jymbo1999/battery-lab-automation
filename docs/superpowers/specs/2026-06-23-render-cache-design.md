@@ -1,7 +1,7 @@
 # 영구 증분 렌더 캐시 엔진 (Phase 1) — 설계 문서
 
 - 날짜: 2026-06-23
-- 상태: 설계 승인됨 (구현 plan 작성 대기)
+- 상태: **구현 완료** (branch `phase1-render-cache`). 검증: EIS C999 콜드 렌더 6.78s → 캐시 히트 0.38s(~18×, 출력 바이트 동일), 80개 테스트 통과. 구현 plan: `docs/superpowers/plans/2026-06-23-render-cache.md`.
 - 범위: Battery Lab 그래프 뷰어의 렌더 성능 문제 해결 (Phase 1)
 - 관련 로드맵: Phase 0(메타데이터 스키마) · Phase 2(업로드 UI) · Phase 3(일지 자동기입) · Phase 4(구조화 클러스터링)는 **별도 spec**으로 다룬다.
 
