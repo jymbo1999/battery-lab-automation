@@ -1,4 +1,8 @@
+from datetime import datetime
 from pathlib import Path
+import hashlib
+import os
+import shutil
 import threading
 
 from flask import Blueprint, Response, abort, current_app, jsonify, redirect, render_template, request, send_file, url_for
@@ -261,6 +265,88 @@ def journal_cell_api():
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify({"ok": True, "cell": cell})
+
+
+_UPLOAD_MAX_BYTES = 20 * 1024 * 1024
+
+
+@blueprint.route("/api/journal/upload-workbook", methods=["POST"])
+def journal_upload_workbook():
+    """Admin-only: replace the condition workbook on disk via a token-guarded HTTPS upload.
+
+    The xlsx is intentionally never committed to git (see .gitignore). On Render it lives
+    on the persistent disk at BATTERY_CONDITION_WORKBOOK, so this lets a new version be
+    pushed straight from a laptop with `curl -F file=@...` instead of pasting into the shell.
+    """
+    token = os.environ.get("BATTERY_ADMIN_UPLOAD_TOKEN")
+    if not token:
+        return jsonify({"ok": False, "error": "BATTERY_ADMIN_UPLOAD_TOKEN is not set"}), 500
+
+    given = request.headers.get("X-Upload-Token") or request.form.get("token")
+    if given != token:
+        abort(403)
+
+    uploaded = request.files.get("file")
+    if uploaded is None:
+        return jsonify({"ok": False, "error": "missing file field"}), 400
+    if not (uploaded.filename or "").lower().endswith(".xlsx"):
+        return jsonify({"ok": False, "error": "only .xlsx is allowed"}), 400
+
+    wb_path = BATTERY_CONDITION_WORKBOOK
+    wb_path.parent.mkdir(parents=True, exist_ok=True)
+    expected_sha = request.headers.get("X-Expected-SHA256", "").strip().lower()
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    tmp_path = wb_path.with_name(f".upload-{stamp}.xlsx")
+
+    digest = hashlib.sha256()
+    total = 0
+    try:
+        with tmp_path.open("wb") as handle:
+            while True:
+                chunk = uploaded.stream.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > _UPLOAD_MAX_BYTES:
+                    tmp_path.unlink(missing_ok=True)
+                    return jsonify({"ok": False, "error": "file too large"}), 413
+                digest.update(chunk)
+                handle.write(chunk)
+
+        actual_sha = digest.hexdigest()
+        if expected_sha and actual_sha != expected_sha:
+            tmp_path.unlink(missing_ok=True)
+            return jsonify({
+                "ok": False,
+                "error": "sha256 mismatch",
+                "expected": expected_sha,
+                "actual": actual_sha,
+                "size": total,
+            }), 400
+
+        backup_path = None
+        if wb_path.exists():
+            backup_path = wb_path.with_name(f"{wb_path.name}.bak.{stamp}")
+            shutil.copy2(wb_path, backup_path)
+            try:
+                old_stat = wb_path.stat()
+                os.chmod(tmp_path, old_stat.st_mode)
+            except OSError:
+                pass
+
+        os.replace(tmp_path, wb_path)
+    except Exception as exc:
+        tmp_path.unlink(missing_ok=True)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+    return jsonify({
+        "ok": True,
+        "target": str(wb_path),
+        "backup": str(backup_path) if backup_path else None,
+        "size": total,
+        "sha256": actual_sha,
+    })
 
 
 @blueprint.route("/eis")
