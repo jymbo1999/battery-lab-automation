@@ -36,6 +36,7 @@ from .file_io import ANALYSIS_EIS, parse_file
 from .metrics import compute_metrics, to_float
 from .plots import artifact_path_for_dataset, eis_fit_svg, multi_line_svg
 from .report import write_outputs
+from . import render_cache
 from .wonatech_service import convert_wonatech_inputs
 from wonatech_parsers.wrd import build_capacity_summary, parse_wrd_file
 
@@ -1574,7 +1575,8 @@ def parse_file_cached(path: Path) -> Any:
 
 @lru_cache(maxsize=512)
 def parse_file_cached_by_mtime(path_text: str, mtime_ns: int, size: int) -> Any:
-    return parse_file(Path(path_text))
+    path = Path(path_text)
+    return render_cache.cached_parse_file(path, path.parent)
 
 
 def valid_fit_metadata_cached(path: Path) -> dict[str, Any]:

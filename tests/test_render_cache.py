@@ -81,3 +81,26 @@ def test_cached_parse_file_hits_disk_second_time(tmp_path, monkeypatch):
     sample.write_text("cycle,capacity\n1,10\n2,11\n3,12\n", encoding="utf-8")
     render_cache.cached_parse_file(sample, data)
     assert calls["n"] == 2
+
+
+def test_ui_parse_file_cached_uses_disk(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "BATTERY_OUTPUT_ROOT", tmp_path)
+    from battery_lab import ui
+    ui.parse_file_cached_by_mtime.cache_clear()
+
+    sample = tmp_path / "cell__capacity__cycle1__20260101.csv"
+    sample.write_text("cycle,capacity\n1,10\n", encoding="utf-8")
+
+    calls = {"n": 0}
+    real = render_cache._parse_file
+
+    def counting(path):
+        calls["n"] += 1
+        return real(path)
+
+    monkeypatch.setattr(render_cache, "_parse_file", counting)
+
+    ui.parse_file_cached(sample)
+    ui.parse_file_cached_by_mtime.cache_clear()   # drop in-memory layer
+    ui.parse_file_cached(sample)                  # must hit DISK, not re-parse
+    assert calls["n"] == 1
