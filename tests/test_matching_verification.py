@@ -88,6 +88,26 @@ def test_verification_payload_consistency_on_real_data():
         assert r["condition_key"] in insc  # every shown match points to an in-scope row
 
 
+def test_read_conditions_keeps_duplicate_sample_rows(tmp_path):
+    # Two replicate cells share the Sample name '1.5act 4T' (real case: JYJ rows 447/448).
+    # They must remain TWO distinct conditions, each with its own row number, not collapse to one.
+    csv = tmp_path / "cond.csv"
+    csv.write_text(
+        "sample,참고,전해질,종류,Binder,Voltage range\n"
+        "1.5act 4T,12파이_Cu foil,1.0M LiPF6 EC/DEC 1:1,LIB,2wt% cmc,0.01~2V\n"
+        "1.5act 4T,12파이_Cu foil,1.0M LiPF6 EC/DEC 1:1,LIB,2wt% cmc,0.01~2V\n"
+        "pure 5T,12파이_Cu foil,1.0M LiPF6 EC/DEC 1:1,LIB,2wt% cmc,0.01~2V\n",
+        encoding="utf-8",
+    )
+    conds = read_conditions(csv)
+    assert len(conds) == 3  # was 2 before fix (the two '1.5act 4T' collapsed)
+    assert sorted(c["_source_row_number"] for c in conds.values()) == [2, 3, 4]
+    onefive = [c for c in conds.values() if c.get("sample") == "1.5act 4T"]
+    assert len(onefive) == 2
+    assert {c["_source_row_number"] for c in onefive} == {2, 3}
+    assert all(scope.in_scope(c) for c in conds.values())
+
+
 def test_verification_api_route_shape_and_404():
     from battery_lab.flask_app import create_app
 

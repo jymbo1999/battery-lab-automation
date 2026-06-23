@@ -56,7 +56,13 @@ def read_conditions(path: Path, sheet_name: str | None = None) -> dict[str, dict
         if cell_id:
             normalized = normalize_condition_record(cell_id, normalized)
             normalized["_source_row_number"] = row_idx
-            conditions[cell_id] = normalized
+            # Keep every journal row distinct. Replicate cells share a Sample name
+            # (e.g. JYJ rows 447/448 both '1.5act 4T'); keying by Sample alone would
+            # collapse them and break 1:1 file<->row matching. Suffix the key with the
+            # row number on collision so capacity's row_exact (+120) bonus can resolve
+            # each file to its own row. The display `sample`/`cell_id` stay unchanged.
+            key = cell_id if cell_id not in conditions else f"{cell_id} #row{row_idx}"
+            conditions[key] = normalized
     return conditions
 
 
