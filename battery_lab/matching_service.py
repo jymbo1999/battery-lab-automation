@@ -411,3 +411,131 @@ def explain_capacity_match_status(row: dict[str, Any]) -> str:
     if status == "manual":
         return "사용자가 수동 확정한 매칭입니다."
     return "자동 매칭 후보입니다."
+
+
+# --- Matching verification (additive, read-only over scoped matching) ---
+
+RISKY_REVIEW_STATUSES = {"unmatched", "ambiguous", "blocked", "review", "manual"}
+
+
+def _verification_row(kind: str, m: dict[str, Any], conditions: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    cond_key = str(m.get("condition_key") or "")
+    cond = conditions.get(cond_key, {}) if cond_key else {}
+    journal_row = m.get("journal_row") or cond.get("_source_row_number") or ""
+    row_prefix = m.get("row_prefix")
+    if kind == "capacity":
+        try:
+            row_exact = row_prefix is not None and journal_row not in ("", None) and int(row_prefix) == int(journal_row)
+        except (TypeError, ValueError):
+            row_exact = False
+    else:
+        row_exact = None
+    reason = explain_capacity_match_status(m) if kind == "capacity" else explain_eis_match_status(m)
+    rel = str(m.get("relative_path") or "")
+    return {
+        "relative_path": rel,
+        "source_name": m.get("source_name") or Path(rel).name,
+        "analysis_type": kind,
+        "status": str(m.get("status") or ""),
+        "in_scope": bool(cond_key and cond_key in conditions),
+        "journal_row": journal_row,
+        "condition_key": cond_key,
+        "sample": m.get("condition_sample") or cond.get("sample") or "",
+        "date": m.get("condition_date") or cond.get("date") or "",
+        "row_exact": row_exact,
+        "overlap_tokens": m.get("overlap_tokens", ""),
+        "conflict_tokens": m.get("conflict_tokens", ""),
+        "date_delta_days": m.get("date_delta_days"),
+        "score": m.get("score", ""),
+        "margin": m.get("margin", ""),
+        "reason": reason,
+        "candidate_options": parse_candidate_options(m),
+        "override_source": "",
+    }
+
+
+def verification_payload(
+    kind: str,
+    source_root: Path,
+    condition_workbook: Path,
+    override_path: Path,
+    *,
+    condition_sheet: str | None = "JYJ",
+) -> dict[str, Any]:
+    """Read-only verification view over IN-SCOPE matching.
+
+    Matches source files against only the in-scope journal rows (the 5-rule
+    FILTER_RULES subset), then returns every matched file with full evidence
+    columns (verified included), the in-scope rows with no file (orphans), and
+    1:1 invariant signals (ambiguous / duplicates / unmatched count). Does NOT
+    rename files or mutate the journal; additive to the existing review flow.
+    """
+    from . import scope
+
+    if kind == "eis":
+        source_paths = collect_source_files(source_root, EIS_SUFFIXES)
+    elif kind == "capacity":
+        source_paths = collect_capacity_summary_sources(source_root)
+    else:
+        raise ValueError(f"Unsupported verification kind: {kind}")
+
+    overrides = load_match_overrides(override_path)
+    conditions = read_conditions(condition_workbook, sheet_name=condition_sheet) if condition_workbook.exists() else {}
+    in_scope_conditions = scope.filter_in_scope(conditions)
+    report = build_report(kind, source_paths, in_scope_conditions, source_root, overrides) if in_scope_conditions else None
+    matches = [asdict(row) for row in report.matches] if report else []
+
+    rows: list[dict[str, Any]] = []
+    unmatched_files: list[str] = []
+    used: dict[Any, list[str]] = {}
+    for m in matches:
+        vrow = _verification_row(kind, m, in_scope_conditions)
+        override = overrides.get(vrow["relative_path"]) or {}
+        vrow["override_source"] = str(override.get("selection_source") or ("manual" if override else ""))
+        if vrow["status"] == "unmatched" or not vrow["condition_key"]:
+            unmatched_files.append(vrow["relative_path"])
+            continue
+        rows.append(vrow)
+        if vrow["journal_row"] not in ("", None):
+            used.setdefault(vrow["journal_row"], []).append(vrow["relative_path"])
+
+    matched_keys = {row["condition_key"] for row in rows}
+    orphans = [
+        {
+            "condition_key": key,
+            "journal_row": cond.get("_source_row_number") or "",
+            "sample": cond.get("sample") or key,
+            "date": cond.get("date") or "",
+        }
+        for key, cond in in_scope_conditions.items()
+        if key not in matched_keys
+    ]
+    ambiguous = [row["relative_path"] for row in rows if row["status"] == "ambiguous"]
+    duplicates = [{"journal_row": jr, "files": files} for jr, files in used.items() if len(files) > 1]
+    needs_review = [row["relative_path"] for row in rows if row["status"] in RISKY_REVIEW_STATUSES]
+
+    status_order = {"unmatched": 0, "ambiguous": 1, "blocked": 2, "review": 3, "manual": 4}
+    rows.sort(key=lambda row: (status_order.get(row["status"], 9), str(row["journal_row"])))
+
+    return {
+        "kind": kind,
+        "condition_sheet": condition_sheet,
+        "source_count": len(source_paths),
+        "rows": rows,
+        "orphans": orphans,
+        "summary": {
+            "in_scope_rows": len(in_scope_conditions),
+            "matched_files": len(rows),
+            "needs_review": len(needs_review),
+            "orphan_rows": len(orphans),
+            "unmatched_files": len(unmatched_files),
+            "ambiguous_files": len(ambiguous),
+            "duplicate_groups": len(duplicates),
+        },
+        "invariant": {
+            "ambiguous": ambiguous,
+            "duplicates": duplicates,
+            "unmatched_count": len(unmatched_files),
+        },
+        "report_ready": report is not None,
+    }
