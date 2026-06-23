@@ -48,20 +48,24 @@ MATERIAL_LEVEL_ANALYSES = {ANALYSIS_RAMAN, ANALYSIS_TGA}
 
 
 def read_conditions(path: Path, sheet_name: str | None = None) -> dict[str, dict[str, Any]]:
-    rows = read_xlsx_optional(path, sheet_name=sheet_name) if path.suffix.lower() in {".xlsx", ".xls"} else read_delimited(path)
+    is_xlsx = path.suffix.lower() in {".xlsx", ".xls"}
+    rows = read_xlsx_optional(path, sheet_name=sheet_name, with_row_number=True) if is_xlsx else read_delimited(path)
     conditions = {}
-    for row_idx, row in enumerate(rows, start=2):
-        normalized = {condition_column(key): value for key, value in row.items()}
+    for fallback_idx, row in enumerate(rows, start=2):
+        # True Excel row for xlsx (carried by read_xlsx_optional, blank-row safe);
+        # positional fallback for CSV. Capacity file leading-numbers refer to this.
+        source_row = row.get("_source_row_number", fallback_idx)
+        normalized = {condition_column(key): value for key, value in row.items() if key != "_source_row_number"}
         cell_id = str(normalized.get("cell_id") or normalized.get("cell") or normalized.get("sample") or "").strip()
         if cell_id:
             normalized = normalize_condition_record(cell_id, normalized)
-            normalized["_source_row_number"] = row_idx
+            normalized["_source_row_number"] = source_row
             # Keep every journal row distinct. Replicate cells share a Sample name
             # (e.g. JYJ rows 447/448 both '1.5act 4T'); keying by Sample alone would
             # collapse them and break 1:1 file<->row matching. Suffix the key with the
             # row number on collision so capacity's row_exact (+120) bonus can resolve
             # each file to its own row. The display `sample`/`cell_id` stay unchanged.
-            key = cell_id if cell_id not in conditions else f"{cell_id} #row{row_idx}"
+            key = cell_id if cell_id not in conditions else f"{cell_id} #row{source_row}"
             conditions[key] = normalized
     return conditions
 

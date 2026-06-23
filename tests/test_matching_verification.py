@@ -108,6 +108,25 @@ def test_read_conditions_keeps_duplicate_sample_rows(tmp_path):
     assert all(scope.in_scope(c) for c in conds.values())
 
 
+def test_read_conditions_uses_true_excel_row_not_drifted_by_blanks(tmp_path):
+    # Blank rows in the journal must NOT shift row numbers: capacity file leading
+    # numbers refer to the TRUE Excel row, so _source_row_number must equal it.
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["sample", "참고", "전해질", "종류", "Binder", "Voltage range"])      # Excel row 1 (header)
+    ws.append(["A 4T", "12파이_Cu foil", "1.0M LiPF6 EC/DEC 1:1", "LIB", "2wt% cmc", "0.01~2V"])  # row 2
+    ws.append([None, None, None, None, None, None])                                # row 3 (blank)
+    ws.append(["B 5T", "12파이_Cu foil", "1.0M LiPF6 EC/DEC 1:1", "LIB", "2wt% cmc", "0.01~2V"])  # row 4
+    path = tmp_path / "j.xlsx"
+    wb.save(path)
+
+    conds = read_conditions(path, sheet_name=ws.title)
+    byrow = {c["_source_row_number"]: c.get("sample") for c in conds.values()}
+    assert byrow == {2: "A 4T", 4: "B 5T"}  # B at TRUE row 4, not 3 (blank row not collapsed away)
+
+
 def test_verification_api_route_shape_and_404():
     from battery_lab.flask_app import create_app
 

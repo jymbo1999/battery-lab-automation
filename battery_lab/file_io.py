@@ -194,7 +194,7 @@ def read_delimited(path: Path) -> list[dict[str, Any]]:
     return [dict(row) for row in reader if any((value or "").strip() for value in row.values())]
 
 
-def read_xlsx_optional(path: Path, sheet_name: str | None = None) -> list[dict[str, Any]]:
+def read_xlsx_optional(path: Path, sheet_name: str | None = None, *, with_row_number: bool = False) -> list[dict[str, Any]]:
     try:
         from openpyxl import load_workbook  # type: ignore
     except ModuleNotFoundError as exc:
@@ -206,7 +206,7 @@ def read_xlsx_optional(path: Path, sheet_name: str | None = None) -> list[dict[s
     worksheets = [workbook[sheet_name]] if sheet_name else workbook.worksheets
     for sheet in worksheets:
         rows = list(sheet.iter_rows(values_only=True))
-        output.extend(rows_to_records(rows))
+        output.extend(rows_to_records(rows, with_row_number=with_row_number))
     return output
 
 
@@ -292,7 +292,11 @@ def column_index(cell_ref: str) -> int:
     return index
 
 
-def rows_to_records(rows: list[tuple[Any, ...]] | list[list[Any]]) -> list[dict[str, Any]]:
+def rows_to_records(
+    rows: list[tuple[Any, ...]] | list[list[Any]],
+    *,
+    with_row_number: bool = False,
+) -> list[dict[str, Any]]:
     if not rows:
         return []
     first_row_is_data = looks_like_data_row(rows[0])
@@ -303,9 +307,15 @@ def rows_to_records(rows: list[tuple[Any, ...]] | list[list[Any]]) -> list[dict[
     )
     output = []
     data_rows = rows if first_row_is_data else rows[1:]
-    for row in data_rows:
+    # 1-based source row of the first data row (1 if no header, else 2).
+    base_row = 1 if first_row_is_data else 2
+    for offset, row in enumerate(data_rows):
         record = {headers[idx]: value for idx, value in enumerate(row) if idx < len(headers)}
         if any(value not in (None, "") for value in record.values()):
+            if with_row_number:
+                # offset enumerates over data_rows INCLUDING blanks, so this stays the
+                # true source row even though blank rows are dropped from the output.
+                record["_source_row_number"] = base_row + offset
             output.append(record)
     return output
 
