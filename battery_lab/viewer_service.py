@@ -14,6 +14,7 @@ from .eis_matching import EIS_SUFFIXES, build_eis_match_report
 from .file_io import parse_file
 from .metrics import to_float
 from .plots import eis_fit_svg
+from . import render_cache
 from . import ui as streamlit_ui
 from wonatech_parsers.wrd import build_capacity_summary, parse_wrd_file
 
@@ -298,7 +299,7 @@ def eis_source_payload(eis_root: Path, capacity_root: Path, rel_path: str, *, sh
 
 def build_eis_viewer_report(eis_root: Path, condition_workbook: Path, override_path: Path) -> tuple[list[Path], dict[str, dict[str, Any]], Any]:
     source_paths = streamlit_ui.collect_source_files(eis_root, EIS_SUFFIXES)
-    conditions = read_conditions(condition_workbook) if condition_workbook.exists() else {}
+    conditions = render_cache.cached_read_conditions(condition_workbook)
     overrides = load_overrides(override_path)
     report = build_eis_match_report(source_paths, conditions, eis_root, overrides)
     return source_paths, conditions, report
@@ -311,7 +312,7 @@ def build_capacity_viewer_report(
 ) -> tuple[list[Path], list[Path], dict[str, dict[str, Any]], Any]:
     source_paths = streamlit_ui.collect_source_files(capacity_root, CAPACITY_LIVE_SUFFIXES)
     summary_paths = [path for path in streamlit_ui.collect_source_files(capacity_root, CAPACITY_SUMMARY_SUFFIXES) if streamlit_ui.is_capacity_summary_source(path)]
-    conditions = read_conditions(condition_workbook) if condition_workbook.exists() else {}
+    conditions = render_cache.cached_read_conditions(condition_workbook)
     overrides = load_overrides(override_path)
     report = build_capacity_match_report(summary_paths, conditions, capacity_root, overrides)
     return source_paths, summary_paths, conditions, report

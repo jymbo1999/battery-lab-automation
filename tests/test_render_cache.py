@@ -104,3 +104,32 @@ def test_ui_parse_file_cached_uses_disk(tmp_path, monkeypatch):
     ui.parse_file_cached_by_mtime.cache_clear()   # drop in-memory layer
     ui.parse_file_cached(sample)                  # must hit DISK, not re-parse
     assert calls["n"] == 1
+
+
+def test_cached_read_conditions_reads_once(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "BATTERY_OUTPUT_ROOT", tmp_path)
+    wb = tmp_path / "cell_conditions.csv"
+    wb.write_text("cell_id,binder\nA,CMC\n", encoding="utf-8")
+
+    calls = {"n": 0}
+
+    def fake_reader(path):
+        calls["n"] += 1
+        return {"A": {"binder": "CMC"}}
+
+    monkeypatch.setattr(render_cache, "_read_conditions", fake_reader)
+
+    c1 = render_cache.cached_read_conditions(wb)
+    c2 = render_cache.cached_read_conditions(wb)
+    assert calls["n"] == 1
+    assert c1 == c2 == {"A": {"binder": "CMC"}}
+
+    # workbook change -> re-read
+    wb.write_text("cell_id,binder\nA,CMC\nB,PVdF\n", encoding="utf-8")
+    render_cache.cached_read_conditions(wb)
+    assert calls["n"] == 2
+
+
+def test_cached_read_conditions_missing_returns_empty(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "BATTERY_OUTPUT_ROOT", tmp_path)
+    assert render_cache.cached_read_conditions(tmp_path / "absent.xlsx") == {}

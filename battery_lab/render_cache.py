@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config
+from .conditions import read_conditions as _read_conditions
 from .file_io import parse_file as _parse_file
 from .models import FileMeta, ParsedDataset
 
@@ -109,3 +110,22 @@ def cached_parse_file(path: Path, root: Path) -> ParsedDataset:
     dataset = _parse_file(path)
     _atomic_write_json(_parsed_path(key), _dataset_to_json(dataset))
     return dataset
+
+
+def _conditions_path(workbook: Path) -> Path:
+    key = _sha1([str(workbook), _stat_tuple(workbook)])
+    return _cache_root() / "conditions" / f"{key}.json"
+
+
+def cached_read_conditions(workbook: Path) -> dict:
+    if not workbook.exists():
+        return {}
+    if _disabled():
+        return _read_conditions(workbook)
+    path = _conditions_path(workbook)
+    cached = _read_json(path)
+    if cached is not None:
+        return cached
+    conditions = _read_conditions(workbook)
+    _atomic_write_json(path, conditions)
+    return conditions
