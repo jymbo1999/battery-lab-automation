@@ -86,3 +86,15 @@ def test_verification_payload_consistency_on_real_data():
     insc = scope.filter_in_scope(read_conditions(config.BATTERY_CONDITION_WORKBOOK, sheet_name="JYJ"))
     for r in payload["rows"]:
         assert r["condition_key"] in insc  # every shown match points to an in-scope row
+
+
+def test_verification_api_route_shape_and_404():
+    from battery_lab.flask_app import create_app
+
+    client = create_app().test_client()
+    resp = client.get("/battery/api/eis/verification")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert "summary" in data and "rows" in data and "orphans" in data and data["kind"] == "eis"
+    # unknown kind -> 404
+    assert client.get("/battery/api/nope/verification").status_code == 404

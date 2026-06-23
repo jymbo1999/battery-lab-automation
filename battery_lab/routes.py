@@ -17,7 +17,7 @@ from .config import (
     BATTERY_OUTPUT_ROOT,
     BATTERY_STREAMLIT_URL,
 )
-from .matching_service import build_match_payload, save_match_overrides, save_match_review_actions, save_match_selections
+from .matching_service import build_match_payload, save_match_overrides, save_match_review_actions, save_match_selections, verification_payload
 from .ai_service import ai_status_payload, get_ai_run, run_ai_smoke
 from .excel_dashboard import DEFAULT_CONDITION_SHEET, WorkbookStore, render_page as render_excel_dashboard_page
 from .job_service import (
@@ -542,6 +542,20 @@ def _match_api_config(kind: str) -> tuple[Path, Path] | None:
     if kind == "capacity":
         return BATTERY_CAPACITY_ROOT, BATTERY_MATCH_CAPACITY_JSON
     return None
+
+
+@blueprint.route("/api/<kind>/verification", methods=["GET"])
+def verification_api(kind: str):
+    """Read-only verification view: per-file matching evidence over the in-scope
+    journal rows, plus orphan rows and 1:1 invariant signals."""
+    config = _match_api_config(kind)
+    if config is None:
+        abort(404)
+    source_root, override_path = config
+    try:
+        return jsonify(verification_payload(kind, source_root, BATTERY_CONDITION_WORKBOOK, override_path))
+    except Exception as exc:  # best-effort; never 500 the review tab
+        return jsonify({"kind": kind, "rows": [], "orphans": [], "summary": {}, "error": str(exc)}), 500
 
 
 @blueprint.route("/api/eis/viewer/options", methods=["GET"])
