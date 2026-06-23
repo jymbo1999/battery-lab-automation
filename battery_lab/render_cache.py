@@ -177,3 +177,13 @@ def _gc_cluster_dir(cluster_dir: Path, keep_prefix: str) -> None:
                 entry.unlink(missing_ok=True)
     except OSError:
         pass
+
+
+def register_sources(kind: str, relpaths: list[str]) -> None:
+    """Phase 2 upload hook. Lazy caching already covers correctness, so this is a
+    best-effort warm/no-op placeholder. Intentionally cheap and exception-safe;
+    eager warming will be wired to warm_overlay_cache in the Phase 2 plan."""
+    try:
+        _ = (kind, list(relpaths or []))
+    except Exception:
+        pass

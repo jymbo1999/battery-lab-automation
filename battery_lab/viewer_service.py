@@ -220,6 +220,13 @@ def capacity_source_payload(capacity_root: Path, eis_root: Path, rel_path: str) 
         try:
             path = safe_child(capacity_root, rel_path)
             title = path.name
+            flags: dict = {}
+            ctx = render_cache.context_hash(capacity_root / "__none__", capacity_root / "__none__")
+            msig = render_cache.membersig([path], capacity_root)
+            cached = render_cache.cluster_cache_get("capacity", "source", rel_path, msig, ctx, flags)
+            if cached is not None:
+                return cached
+
             if path.suffix.lower() == ".wrd":
                 records, validation = parse_wrd_file(path)
                 summary = build_capacity_summary(records)
@@ -230,26 +237,30 @@ def capacity_source_payload(capacity_root: Path, eis_root: Path, rel_path: str) 
                     f"{validation.get('cycle_min_export_number', '?')} -> {validation.get('cycle_max_export_number', '?')}"
                 )
                 html_doc = source_preview_html(title, meta, svg, table)
-                return {
+                payload = {
                     "available": bool(records),
                     "html": html_doc,
                     "errors": [] if records else ["WRD record를 찾지 못했습니다."],
                     "title": title,
                     "row_count": len(summary),
                 }
+                render_cache.cluster_cache_put("capacity", "source", rel_path, msig, ctx, flags, payload)
+                return payload
 
             dataset = parse_file(path)
             graph = capacity_dataset_svg(title, dataset)
             table = rows_table_html(dataset.rows[:300])
             meta = f"{dataset.meta.analysis_type} · rows {len(dataset.rows)}"
             html_doc = source_preview_html(title, meta, graph, table)
-            return {
+            payload = {
                 "available": bool(dataset.rows or graph),
                 "html": html_doc,
                 "errors": [],
                 "title": title,
                 "row_count": len(dataset.rows),
             }
+            render_cache.cluster_cache_put("capacity", "source", rel_path, msig, ctx, flags, payload)
+            return payload
         except Exception as exc:
             return {"available": False, "html": "", "errors": [str(exc)], "title": rel_path or "Capacity source", "row_count": 0}
 
@@ -304,6 +315,13 @@ def capacity_overlay_payload(
 def eis_source_payload(eis_root: Path, capacity_root: Path, rel_path: str, *, show_fit: bool = False) -> dict[str, Any]:
     with streamlit_roots(eis_root, capacity_root):
         path = safe_child(eis_root, rel_path)
+        flags = {"show_fit": bool(show_fit)}
+        ctx = render_cache.context_hash(eis_root / "__none__", eis_root / "__none__")
+        msig = render_cache.membersig([path], eis_root)
+        cached = render_cache.cluster_cache_get("eis", "source", rel_path, msig, ctx, flags)
+        if cached is not None:
+            return cached
+
         dataset = parse_file(path)
         points = streamlit_ui.eis_points(dataset)
         metadata = streamlit_ui.valid_fit_metadata_cached(path) if show_fit else None
@@ -316,7 +334,9 @@ def eis_source_payload(eis_root: Path, capacity_root: Path, rel_path: str, *, sh
             equal_aspect=show_fit,
             show_last_label=True,
         )
-        return {"available": bool(html_doc), "html": html_doc, "errors": [], "title": path.name, "point_count": len(points)}
+        payload = {"available": bool(html_doc), "html": html_doc, "errors": [], "title": path.name, "point_count": len(points)}
+        render_cache.cluster_cache_put("eis", "source", rel_path, msig, ctx, flags, payload)
+        return payload
 
 
 def build_eis_viewer_report(eis_root: Path, condition_workbook: Path, override_path: Path) -> tuple[list[Path], dict[str, dict[str, Any]], Any]:

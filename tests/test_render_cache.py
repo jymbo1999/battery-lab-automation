@@ -227,3 +227,10 @@ def test_context_change_invalidates_cluster(tmp_path, monkeypatch):
     # same key/sig but a different context (workbook changed) must miss:
     assert render_cache.cluster_cache_get("eis", "comparison", "C001", "sig", "ctxNEW", flags) is None
     assert render_cache.cluster_cache_get("eis", "comparison", "C001", "sig", "ctxOLD", flags) == payload
+
+
+def test_register_sources_is_callable_and_safe(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "BATTERY_OUTPUT_ROOT", tmp_path)
+    # No-op-safe hook for Phase 2 upload to call; must never raise.
+    render_cache.register_sources("eis", ["does/not/exist.seo"])
+    render_cache.register_sources("capacity", [])
