@@ -349,6 +349,33 @@ def journal_upload_workbook():
     })
 
 
+@blueprint.route("/api/journal/download-workbook", methods=["GET"])
+def journal_download_workbook():
+    """Admin-only: download the current condition workbook from disk.
+
+    Token-guarded with the same BATTERY_ADMIN_UPLOAD_TOKEN as the upload route.
+    The download name is normalized regardless of the on-disk filename.
+    """
+    token = os.environ.get("BATTERY_ADMIN_UPLOAD_TOKEN")
+    if not token:
+        return jsonify({"ok": False, "error": "BATTERY_ADMIN_UPLOAD_TOKEN is not set"}), 500
+
+    given = request.headers.get("X-Upload-Token") or request.args.get("token")
+    if given != token:
+        abort(403)
+
+    wb_path = BATTERY_CONDITION_WORKBOOK
+    if not wb_path.is_file():
+        return jsonify({"ok": False, "error": "workbook not found", "path": str(wb_path)}), 404
+
+    return send_file(
+        wb_path,
+        as_attachment=True,
+        download_name="Cell condition Calculation.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 @blueprint.route("/eis")
 def eis():
     return render_template(
