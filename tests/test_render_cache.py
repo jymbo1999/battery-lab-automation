@@ -1,6 +1,10 @@
 from pathlib import Path
 
 from battery_lab import config, file_io, render_cache
+from battery_lab import ui as battery_ui
+from battery_lab import viewer_service
+
+SAMPLE_DATA = Path(__file__).resolve().parents[1] / "sample_data"
 
 
 def test_atomic_write_then_read_roundtrip(tmp_path, monkeypatch):
@@ -153,3 +157,25 @@ def test_cluster_cache_put_get_and_gc(tmp_path, monkeypatch):
     remaining = sorted(p.name for p in cluster_dir.glob("*.json"))
     assert all(name.startswith("sigBBB__") for name in remaining)
     assert len(remaining) == 1
+
+
+def test_eis_overlay_payload_renders_once(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "BATTERY_OUTPUT_ROOT", tmp_path)
+    battery_ui.parse_file_cached_by_mtime.cache_clear()
+
+    calls = {"n": 0}
+    real_html = battery_ui.eis_overlay_html
+
+    def counting_html(*args, **kwargs):
+        calls["n"] += 1
+        return real_html(*args, **kwargs)
+
+    monkeypatch.setattr(battery_ui, "eis_overlay_html", counting_html)
+
+    args = (SAMPLE_DATA, SAMPLE_DATA, SAMPLE_DATA / "cell_conditions.csv", tmp_path / "ov.json")
+    kwargs = dict(mode="comparison", key="", show_fit=False)
+
+    p1 = viewer_service.eis_overlay_payload(*args, **kwargs)
+    p2 = viewer_service.eis_overlay_payload(*args, **kwargs)
+    assert calls["n"] == 1                 # second call served from cluster cache
+    assert p1 == p2

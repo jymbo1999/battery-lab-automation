@@ -143,6 +143,15 @@ def eis_overlay_payload(
         if not rel_paths:
             return {"available": False, "html": "", "errors": ["표시할 EIS source가 없습니다."], "title": title}
 
+        member_paths = [eis_root / rel for rel in rel_paths]
+        flags = {"show_fit": bool(show_fit)}
+        ctx = render_cache.context_hash(condition_workbook, override_path)
+        msig = render_cache.membersig(member_paths, eis_root)
+        cache_id = key or f"{mode}:all"
+        cached = render_cache.cluster_cache_get("eis", mode, cache_id, msig, ctx, flags)
+        if cached is not None:
+            return cached
+
         series, errors = streamlit_ui.load_eis_overlay_series(
             rel_paths,
             report,
@@ -164,7 +173,9 @@ def eis_overlay_payload(
             show_fit=show_fit,
             performance_mode=performance_mode,
         )
-        return {"available": bool(html_doc), "html": html_doc, "errors": errors, "title": title, "series_count": len(series)}
+        payload = {"available": bool(html_doc), "html": html_doc, "errors": errors, "title": title, "series_count": len(series)}
+        render_cache.cluster_cache_put("eis", mode, cache_id, msig, ctx, flags, payload)
+        return payload
 
 
 def capacity_viewer_options(capacity_root: Path, eis_root: Path, condition_workbook: Path, override_path: Path) -> dict[str, Any]:
