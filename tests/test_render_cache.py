@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from battery_lab import config, render_cache
+from battery_lab import config, file_io, render_cache
 
 
 def test_atomic_write_then_read_roundtrip(tmp_path, monkeypatch):
@@ -53,3 +53,31 @@ def test_cluster_key_changes_with_flags(tmp_path, monkeypatch):
     k1 = render_cache.cluster_key("eis", "comparison", "C001", "sig", ctx, {"show_fit": True})
     k2 = render_cache.cluster_key("eis", "comparison", "C001", "sig", ctx, {"show_fit": False})
     assert k1 != k2
+
+
+def test_cached_parse_file_hits_disk_second_time(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "BATTERY_OUTPUT_ROOT", tmp_path)
+    data = tmp_path / "data"
+    data.mkdir()
+    sample = data / "cell__capacity__cycle1__20260101.csv"
+    sample.write_text("cycle,capacity\n1,10\n2,11\n", encoding="utf-8")
+
+    calls = {"n": 0}
+    real_parse = file_io.parse_file
+
+    def counting_parse(path):
+        calls["n"] += 1
+        return real_parse(path)
+
+    monkeypatch.setattr(render_cache, "_parse_file", counting_parse)
+
+    ds1 = render_cache.cached_parse_file(sample, data)
+    ds2 = render_cache.cached_parse_file(sample, data)
+    assert calls["n"] == 1                      # second call served from disk
+    assert ds1.rows == ds2.rows
+    assert ds1.meta.cell_id == ds2.meta.cell_id
+
+    # mtime/size change -> re-parse
+    sample.write_text("cycle,capacity\n1,10\n2,11\n3,12\n", encoding="utf-8")
+    render_cache.cached_parse_file(sample, data)
+    assert calls["n"] == 2

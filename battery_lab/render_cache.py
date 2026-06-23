@@ -4,10 +4,13 @@ import hashlib
 import json
 import os
 import uuid
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from . import config
+from .file_io import parse_file as _parse_file
+from .models import FileMeta, ParsedDataset
 
 CACHE_VERSION = "v1"
 
@@ -75,3 +78,34 @@ def parsed_key(path: Path, root: Path) -> str:
 
 def cluster_key(kind: str, mode: str, cluster_id: str, member_sig: str, ctx_hash: str, flags: dict) -> str:
     return _sha1([kind, mode, str(cluster_id), member_sig, ctx_hash, flags])
+
+
+def _dataset_to_json(ds: ParsedDataset) -> dict:
+    meta = asdict(ds.meta)
+    meta["path"] = str(ds.meta.path)
+    return {"meta": meta, "rows": ds.rows, "columns": ds.columns}
+
+
+def _dataset_from_json(d: dict) -> ParsedDataset:
+    meta = dict(d["meta"])
+    meta["path"] = Path(meta["path"])
+    return ParsedDataset(meta=FileMeta(**meta), rows=d["rows"], columns=d.get("columns", []))
+
+
+def _parsed_path(key: str) -> Path:
+    return _cache_root() / "parsed" / f"{key}.json"
+
+
+def cached_parse_file(path: Path, root: Path) -> ParsedDataset:
+    if _disabled():
+        return _parse_file(path)
+    key = parsed_key(path, root)
+    cached = _read_json(_parsed_path(key))
+    if cached is not None:
+        try:
+            return _dataset_from_json(cached)
+        except (KeyError, TypeError):
+            pass  # stale/incompatible shape -> recompute
+    dataset = _parse_file(path)
+    _atomic_write_json(_parsed_path(key), _dataset_to_json(dataset))
+    return dataset
