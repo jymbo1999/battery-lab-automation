@@ -585,32 +585,37 @@ def apply_checklist_answers(
     for file_key, ans in (data or {}).items():
         choice = str((ans or {}).get("choice") or "").strip()
         memo = str((ans or {}).get("memo") or "")
+        members = (ans or {}).get("members") or None
         if not choice or choice == "__skip__":
             skipped += 1
             continue
         if choice == "__delete__":
-            overrides[str(file_key)] = {
-                "action": "delete_file",
-                "delete_candidate": True,
-                "reason": memo or "checklist_delete",
-                "selection_source": "checklist",
-                "selected_at": now,
-            }
-            deleted += 1
+            targets = members if members else [file_key]
+            for target in targets:
+                overrides[str(target)] = {
+                    "action": "delete_file",
+                    "delete_candidate": True,
+                    "reason": memo or "checklist_delete",
+                    "selection_source": "checklist",
+                    "selected_at": now,
+                }
+                deleted += 1
             continue
         condition = conditions.get(choice)
         if condition is None:
             unknown += 1
             continue
-        overrides[str(file_key)] = {
-            "condition_key": choice,
-            "journal_row": condition.get("_source_row_number"),
-            "sample": condition.get("sample") or choice,
-            "date": condition.get("date") or "",
-            "memo": memo,
-            "selection_source": "checklist",
-            "selected_at": now,
-        }
-        applied += 1
+        targets = members if members else [file_key]
+        for target in targets:
+            overrides[str(target)] = {
+                "condition_key": choice,
+                "journal_row": condition.get("_source_row_number"),
+                "sample": condition.get("sample") or choice,
+                "date": condition.get("date") or "",
+                "memo": memo,
+                "selection_source": "checklist",
+                "selected_at": now,
+            }
+            applied += 1
     save_match_overrides(override_path, overrides)
     return {"applied": applied, "deleted": deleted, "skipped": skipped, "unknown": unknown, "override_count": len(overrides)}

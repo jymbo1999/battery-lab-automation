@@ -231,9 +231,19 @@ __BODY__
   function answers(){
     const out={};
     document.querySelectorAll('select.ans').forEach(s=>{
-      const f=s.dataset.file, v=s.value;
-      const m=q('input.memo[data-file="'+esc(f)+'"]'); const memo=m?m.value:'';
-      if(v||memo) out[f]={choice:v, memo:memo};
+      const v=s.value;
+      if(s.dataset.cluster){
+        const id=s.dataset.cluster;
+        const m=q('input.memo[data-cluster="'+esc(id)+'"]'); const memo=m?m.value:'';
+        if(v||memo){
+          const members=(s.dataset.members||'').split(';').filter(Boolean);
+          out[id]={choice:v, memo:memo, members:members};
+        }
+      } else {
+        const f=s.dataset.file;
+        const m=q('input.memo[data-file="'+esc(f)+'"]'); const memo=m?m.value:'';
+        if(v||memo) out[f]={choice:v, memo:memo};
+      }
     });
     return {version:1, kind:'matching_checklist', answers:out};
   }
@@ -246,9 +256,11 @@ __BODY__
   function restore(){
     let d={}; try{ d=JSON.parse(localStorage.getItem(KEY)||'{}'); }catch(e){}
     const a=(d&&d.answers)||{};
-    Object.keys(a).forEach(f=>{
-      const s=q('select.ans[data-file="'+esc(f)+'"]'); if(s) s.value=a[f].choice||'';
-      const m=q('input.memo[data-file="'+esc(f)+'"]'); if(m) m.value=a[f].memo||'';
+    Object.keys(a).forEach(k=>{
+      const s=q('select.ans[data-file="'+esc(k)+'"]')||q('select.ans[data-cluster="'+esc(k)+'"]');
+      if(s) s.value=a[k].choice||'';
+      const m=q('input.memo[data-file="'+esc(k)+'"]')||q('input.memo[data-cluster="'+esc(k)+'"]');
+      if(m) m.value=a[k].memo||'';
     });
     progress();
   }

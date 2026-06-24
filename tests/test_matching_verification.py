@@ -311,3 +311,40 @@ def test_render_checklist_html_offers_cluster_candidates():
     assert 'data-cluster="TS002"' in html
     assert "행 300" in html
     assert "__delete__" in html
+
+
+def test_apply_checklist_answers_cluster_fans_out_to_members(tmp_path):
+    import json as _json
+    csv = tmp_path / "cond.csv"
+    csv.write_text(
+        "sample,참고,전해질,종류,Binder,Voltage range\n"
+        "pure 5T,12파이_Cu foil,1.0M LiPF6 EC/DEC 1:1,LIB,2wt% cmc,0.01~2V\n",
+        encoding="utf-8")
+    ov = tmp_path / "ov.json"
+    answers = {"version": 1, "answers": {
+        "TS002": {"choice": "pure 5T", "memo": "셀1",
+                  "members": ["260603/pure 5t_1_0hr.SEO", "260603/pure 5t_1_9hr.SEO"]},
+    }}
+    res = matching_service.apply_checklist_answers(answers, csv, ov)
+    assert res["applied"] == 2          # both member files written
+    saved = _json.loads(ov.read_text(encoding="utf-8"))
+    assert saved["260603/pure 5t_1_0hr.SEO"]["condition_key"] == "pure 5T"
+    assert saved["260603/pure 5t_1_9hr.SEO"]["condition_key"] == "pure 5T"
+
+
+def test_checklist_js_serializes_cluster_answers_with_members():
+    from battery_lab import checklist_view
+    payloads = {"eis": {"kind": "eis", "summary": {}, "orphans": [], "rows": [], "deferred_rows": [
+        {"cluster_id": "TS002", "folder_date": "260603", "cluster_signature": "260603pure5t1",
+         "member_paths": "260603/pure 5t_1_0hr.SEO;260603/pure 5t_1_9hr.SEO", "time_points": "0hr;9hr",
+         "has_zero": True, "has_24": False, "file_count": 2, "merge_provenance": "",
+         "condition_key": "k2", "condition_sample": "pure 5T", "condition_date": "260603",
+         "date_delta_days": 0, "match_status": "ambiguous",
+         "candidate_options": "[{\"condition_key\": \"k2\", \"journal_row\": 300, \"sample\": \"pure 5T\", \"date\": \"260603\", \"date_delta_days\": 0, \"score\": 140}]",
+         "reason": "끝점 불완전"},
+    ]}}
+    html = checklist_view.render_checklist_html(payloads)
+    # The export JS must read data-cluster and data-members so cluster answers round-trip.
+    assert "dataset.cluster" in html
+    assert "dataset.members" in html
+    assert 'data-members="260603/pure 5t_1_0hr.SEO;260603/pure 5t_1_9hr.SEO"' in html
