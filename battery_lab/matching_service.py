@@ -502,14 +502,11 @@ def verification_payload(
     unmatched_files: list[str] = []
     used: dict[Any, list[str]] = {}
     for m in matches:
+        if m["is_time_series"]:
+            continue  # time-series handled as clusters below
         vrow = _verification_row(kind, m, in_scope_conditions)
         override = overrides.get(vrow["relative_path"]) or {}
         vrow["override_source"] = str(override.get("selection_source") or ("manual" if override else ""))
-        # Time-series EIS (_hr) is held to lower priority: cluster-comparison data is
-        # what urgently needs exact row matching, so _hr files are set aside here.
-        if vrow.get("is_time_series"):
-            deferred_rows.append(vrow)
-            continue
         if vrow["status"] == "unmatched" or not vrow["condition_key"]:
             unmatched_files.append(vrow["relative_path"])
             continue
@@ -532,9 +529,12 @@ def verification_payload(
     duplicates = [{"journal_row": jr, "files": files} for jr, files in used.items() if len(files) > 1]
     needs_review = [row["relative_path"] for row in rows if row["status"] in RISKY_REVIEW_STATUSES]
 
+    deferred_rows = [asdict(cluster) for cluster in (report.time_series_groups if report else [])]
+
     status_order = {"unmatched": 0, "ambiguous": 1, "blocked": 2, "review": 3, "manual": 4}
     rows.sort(key=lambda row: (status_order.get(row["status"], 9), str(row["journal_row"])))
-    deferred_rows.sort(key=lambda row: (status_order.get(row["status"], 9), str(row["journal_row"])))
+    cluster_order = {"conflict": 0, "ambiguous": 1, "verified": 2}
+    deferred_rows.sort(key=lambda c: (cluster_order.get(c["match_status"], 9), c["folder_date"], c["cluster_signature"]))
 
     return {
         "kind": kind,
@@ -551,7 +551,9 @@ def verification_payload(
             "unmatched_files": len(unmatched_files),
             "ambiguous_files": len(ambiguous),
             "duplicate_groups": len(duplicates),
-            "deferred_time_series": len(deferred_rows),
+            "time_series_clusters": len(deferred_rows),
+            "time_series_verified": sum(1 for c in deferred_rows if c["match_status"] == "verified"),
+            "time_series_needs_review": sum(1 for c in deferred_rows if c["match_status"] in ("ambiguous", "conflict")),
         },
         "invariant": {
             "ambiguous": ambiguous,

@@ -35,7 +35,7 @@ def _summary_bar(s: dict[str, Any]) -> str:
         ("미매칭", s.get("unmatched_files", 0)),
         ("고아행", s.get("orphan_rows", 0)),
         ("중복그룹", s.get("duplicate_groups", 0)),
-        ("시계열 보류", s.get("deferred_time_series", 0)),
+        ("시계열 클러스터", s.get("time_series_clusters", 0)),
     ]
     inner = "".join(f'<div class="stat"><b>{escape(str(v))}</b><span>{escape(label)}</span></div>' for label, v in cells)
     return f'<div class="stats">{inner}</div>'

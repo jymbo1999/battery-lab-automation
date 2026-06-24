@@ -187,18 +187,35 @@ def test_path_date_extracts_yymmdd_folder():
     assert matching_service._path_date("no date here.wrd") == ""
 
 
-def test_verification_payload_defers_eis_time_series():
+def test_verification_payload_clusters_eis_time_series():
     if not config.BATTERY_EIS_ROOT.exists() or not config.BATTERY_CONDITION_WORKBOOK.exists():
         pytest.skip("real EIS data / workbook not present")
     p = matching_service.verification_payload(
         "eis", config.BATTERY_EIS_ROOT, config.BATTERY_CONDITION_WORKBOOK,
         config.BATTERY_MATCH_EIS_JSON, condition_sheet="JYJ",
     )
-    assert all(not r["is_time_series"] for r in p["rows"])          # main matching set = comparison only
-    assert all(r["is_time_series"] for r in p["deferred_rows"])     # deferred = time-series (_hr)
-    assert p["summary"]["deferred_time_series"] == len(p["deferred_rows"])
-    assert len(p["deferred_rows"]) > len(p["rows"])                 # most EIS is _hr
-    assert any(r["file_date"] for r in (p["rows"] + p["deferred_rows"]))  # file date populated
+    clusters = p["deferred_rows"]
+    assert p["summary"]["time_series_clusters"] == len(clusters)
+    assert len(clusters) < 43
+    missing_endpoint = [c for c in clusters if not (c["has_zero"] and c["has_24"])]
+    assert len(missing_endpoint) < 37
+    assert all("member_paths" in c and "match_status" in c for c in clusters)
+
+
+def test_verification_payload_time_series_clusters_synthetic(tmp_path):
+    import openpyxl
+    wb = openpyxl.Workbook(); wsx = wb.active
+    wsx.append(["sample", "참고", "전해질", "종류", "Binder", "Voltage range", "date"])
+    wsx.append(["dl 2t2t", "12파이_Cu foil", "1.0M LiPF6 EC/DEC 1:1", "LIB", "2wt% cmc", "0.01~2V", "260521"])
+    wb_path = tmp_path / "cond.xlsx"; wb.save(wb_path)
+    eis_root = tmp_path / "EIS" / "260521"; eis_root.mkdir(parents=True)
+    for name in ("dl 2t2t_0hr_01.SEO", "dl2t2t_24hr_01.SEO"):
+        (eis_root / name).write_text("x", encoding="utf-8")
+    ov = tmp_path / "ov.json"
+    p = matching_service.verification_payload(
+        "eis", tmp_path / "EIS", wb_path, ov, condition_sheet=wsx.title)
+    assert p["summary"]["time_series_clusters"] == len(p["deferred_rows"]) >= 1
+    assert all("has_zero" in c for c in p["deferred_rows"])
 
 
 def test_render_checklist_html_has_inputs_and_candidates():
