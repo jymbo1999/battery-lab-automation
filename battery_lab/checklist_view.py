@@ -11,6 +11,9 @@ from html import escape
 from typing import Any
 
 _DECISION_STATUSES = {"ambiguous", "review"}
+# Clusters add a `conflict` status (two clusters claiming one journal row) that
+# per-file rows never have; it always needs the research lead to resolve it.
+_CLUSTER_DECISION_STATUSES = {"ambiguous", "review", "conflict"}
 
 import json as _json
 
@@ -157,7 +160,7 @@ def render_checklist_html(payloads: dict[str, dict[str, Any]]) -> str:
             elif str(row.get("status")) in ("verified", "manual"):
                 confirmed_rows.append(row)
         for cluster in payload.get("deferred_rows", []):
-            if str(cluster.get("match_status")) in _DECISION_STATUSES:
+            if str(cluster.get("match_status")) in _CLUSTER_DECISION_STATUSES:
                 decision_clusters.append(cluster)
             elif str(cluster.get("match_status")) in ("verified", "manual"):
                 confirmed_clusters.append(cluster)

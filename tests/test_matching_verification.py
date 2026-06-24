@@ -218,6 +218,25 @@ def test_verification_payload_time_series_clusters_synthetic(tmp_path):
     assert all("has_zero" in c for c in p["deferred_rows"])
 
 
+def test_render_checklist_html_includes_conflict_clusters_as_decisions():
+    # `conflict` clusters (two clusters claiming one journal row) are exactly what
+    # the research lead must resolve — they MUST get a decision control, not be
+    # silently dropped (regression: only ambiguous/verified were routed).
+    from battery_lab import checklist_view
+    payloads = {"eis": {"kind": "eis", "summary": {}, "orphans": [], "rows": [], "deferred_rows": [
+        {"cluster_id": "TS001", "folder_date": "260603", "cluster_signature": "260603pure5t1",
+         "member_paths": "260603/pure 5t_1_0hr.SEO;260603/pure 5t_1_24hr.SEO", "time_points": "0hr;24hr",
+         "has_zero": True, "has_24": True, "file_count": 2, "merge_provenance": "",
+         "condition_key": "k1", "condition_sample": "pure 5T", "condition_date": "260603",
+         "date_delta_days": 0, "match_status": "conflict",
+         "candidate_options": "[{\"condition_key\": \"k1\", \"journal_row\": 5, \"sample\": \"pure 5T\", \"date\": \"260603\", \"date_delta_days\": 0, \"score\": 140}]",
+         "reason": "같은 일지 행을 2개 클러스터가 차지(충돌)."},
+    ]}}
+    html = checklist_view.render_checklist_html(payloads)
+    assert 'data-cluster="TS001"' in html      # conflict cluster gets a decision control
+    assert "행 5" in html
+
+
 def test_render_checklist_html_has_inputs_and_candidates():
     from battery_lab import checklist_view
 
