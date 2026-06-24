@@ -96,6 +96,24 @@ def main() -> None:
             print(f"    {gk:45s} [{', '.join(tps)}]")
     print(f"\nbases with multiple groups: {split}")
 
+    # (d) reclustered view
+    from battery_lab.eis_matching import match_eis_files_to_conditions
+    from battery_lab.conditions import read_conditions
+    from battery_lab.config import BATTERY_CONDITION_WORKBOOK
+    from battery_lab import scope, eis_timeseries
+
+    conds = (scope.filter_in_scope(read_conditions(BATTERY_CONDITION_WORKBOOK, sheet_name="JYJ"))
+             if BATTERY_CONDITION_WORKBOOK.exists() else {})
+    _, matches = match_eis_files_to_conditions(paths, conds, root)
+    clusters = eis_timeseries.build_time_series_clusters(matches, conds)
+    miss = sum(1 for c in clusters if not (c.has_zero and c.has_24))
+    print(f"\n=== (d) reclustered: {len(clusters)} clusters (was {len(groups)} groups) ===")
+    print(f"clusters missing an endpoint: {miss}\n")
+    for c in clusters:
+        flag = "" if (c.has_zero and c.has_24) else "  <-- INCOMPLETE"
+        prov = f"  merge={c.merge_provenance}" if c.merge_provenance else ""
+        print(f"{c.cluster_id} {c.cluster_signature:30s} {c.match_status:9s} [{c.time_points}]{flag}{prov}")
+
 
 if __name__ == "__main__":
     main()

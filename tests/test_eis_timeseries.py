@@ -152,3 +152,27 @@ def test_report_uses_clusters(tmp_path):
     report = eis_matching.build_eis_match_report(paths, conditions, root)
     assert all(isinstance(g, ts.EISTimeSeriesCluster) for g in report.time_series_groups)
     assert len(report.time_series_groups) == 1
+
+
+def test_real_data_recluster_reduces_fragmentation():
+    import pytest
+    from battery_lab import config
+    from battery_lab.conditions import read_conditions
+    from battery_lab.eis_matching import match_eis_files_to_conditions
+    from battery_lab.matching_service import collect_source_files, EIS_SUFFIXES
+    from battery_lab import scope
+
+    if not config.BATTERY_EIS_ROOT.exists() or not config.BATTERY_CONDITION_WORKBOOK.exists():
+        pytest.skip("real EIS data / workbook not present")
+    conds = scope.filter_in_scope(read_conditions(config.BATTERY_CONDITION_WORKBOOK, sheet_name="JYJ"))
+    paths = collect_source_files(config.BATTERY_EIS_ROOT, EIS_SUFFIXES)
+    _, matches = match_eis_files_to_conditions(paths, conds, config.BATTERY_EIS_ROOT)
+    clusters = ts.build_time_series_clusters(matches, conds)
+    # Baseline before reclustering: 43 groups, 16 missing 0hr + 21 missing 24hr.
+    assert len(clusters) < 43
+    missing = [c for c in clusters if not (c.has_zero and c.has_24)]
+    assert len(missing) < 30
+    # The dl/pc73 spacing splits must now be single complete clusters.
+    by_sig = {c.cluster_signature: c for c in clusters}
+    assert all(by_sig[s].has_zero and by_sig[s].has_24
+               for s in by_sig if s.endswith("dl2t2t") or s.endswith("dl3t3t"))
