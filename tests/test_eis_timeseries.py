@@ -74,3 +74,36 @@ def test_no_merge_on_overlapping_hours():
 def test_complete_group_passes_through_untouched():
     res = ts._merge_fragments(_frags(("c", [0, 6, 24])))
     assert len(res) == 1 and res[0]["provenance"] == ""
+
+
+def test_cluster_dict_verified_complete_single_row():
+    members = [
+        _m("260610/pure 4t_2_0hr.SEO", "260610 pure 4t 2", "0hr", key="k1", sample="pure 4T", date="260610", delta=0, score=80),
+        _m("260610/pure 4t_2_24hr.SEO", "260610 pure 4t 2", "24hr", key="k1", sample="pure 4T", date="260610", delta=0, score=80),
+    ]
+    conds = {"k1": {"_source_row_number": 510, "sample": "pure 4T", "date": "260610"}}
+    c = ts._cluster_dict(members, "", conds)
+    assert c["has_zero"] and c["has_24"]
+    assert c["match_status"] == "verified"
+    assert c["condition_key"] == "k1" and c["date_delta_days"] == 0
+    assert c["time_points"] == "0hr;24hr"
+
+
+def test_cluster_dict_ambiguous_when_endpoint_missing():
+    members = [_m("260603/pure 5t_1_0hr.SEO", "260603 pure 5t 1", "0hr", key="k1", score=70),
+               _m("260603/pure 5t_1_9hr.SEO", "260603 pure 5t 1", "9hr", key="k1", score=70)]
+    conds = {"k1": {"_source_row_number": 300, "sample": "pure 5T", "date": "260603"}}
+    c = ts._cluster_dict(members, "", conds)
+    assert c["match_status"] == "ambiguous"
+    assert "끝점" in c["reason"]
+
+
+def test_cluster_dict_ambiguous_when_rows_compete():
+    members = [_m("a/x_0hr.SEO", "g", "0hr", key="k1", score=70),
+               _m("a/x_24hr.SEO", "g", "24hr", key="k2", score=68)]
+    conds = {"k1": {"_source_row_number": 1}, "k2": {"_source_row_number": 2}}
+    c = ts._cluster_dict(members, "", conds)
+    assert c["match_status"] == "ambiguous"
+    import json
+    opts = json.loads(c["candidate_options"])
+    assert {o["condition_key"] for o in opts} == {"k1", "k2"}

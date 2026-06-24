@@ -116,3 +116,74 @@ def _merge_fragments(sig_groups: list[tuple[str, list[EISConditionMatch]]]) -> l
     for group in neither:
         results.append({"members": list(group), "provenance": ""})
     return results
+
+
+def _candidate_options(ranked: list[tuple[str, int]], meta: dict[str, EISConditionMatch],
+                       conditions: dict[str, dict[str, Any]], *, max_rows: int = 8) -> str:
+    options = []
+    for key, weight in ranked[:max_rows]:
+        cond = conditions.get(key, {})
+        match = meta[key]
+        options.append({
+            "condition_key": key,
+            "journal_row": cond.get("_source_row_number") or "",
+            "sample": str(cond.get("sample") or match.condition_sample or key),
+            "date": compact_date(cond.get("date")) or match.condition_date or "",
+            "date_delta_days": match.date_delta_days,
+            "score": int(weight),
+        })
+    return json.dumps(options, ensure_ascii=False)
+
+
+def _cluster_dict(members: list[EISConditionMatch], provenance: str,
+                  conditions: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    paths = [m.relative_path for m in members]
+    fdate = folder_date(members[0].relative_path)
+    time_points = sorted({m.time_point for m in members if m.time_point}, key=time_sort_key)
+    hours = {hr_num(t) for t in time_points}
+    has_zero, has_24 = 0 in hours, 24 in hours
+
+    votes: dict[str, int] = defaultdict(int)
+    meta: dict[str, EISConditionMatch] = {}
+    for m in members:
+        if m.condition_key:
+            votes[m.condition_key] += max(int(m.score), 1)
+            meta.setdefault(m.condition_key, m)
+    ranked = sorted(votes.items(), key=lambda kv: (-kv[1], kv[0]))
+    best_key = ranked[0][0] if ranked else ""
+    best = meta.get(best_key)
+    competing = len(ranked) > 1 and ranked[1][1] >= ranked[0][1] * REPLICATE_VOTE_RATIO
+
+    if not (has_zero and has_24):
+        status = "ambiguous"
+        reason = "0hr/24hr 끝점이 불완전합니다(병합 후에도 한쪽 결손)."
+    elif not best_key:
+        status = "ambiguous"
+        reason = "일지 행 후보를 찾지 못했습니다."
+    elif competing:
+        status = "ambiguous"
+        reason = "멤버 파일들이 서로 다른 일지 행을 가리킵니다."
+    else:
+        row = conditions.get(best_key, {}).get("_source_row_number") or "?"
+        status = "verified"
+        reason = f"0hr→24hr 완비 + 단일 일지 행 {row} (파일 {len(members)}개)."
+        if provenance:
+            reason += f" 병합: {provenance}."
+
+    return {
+        "folder_date": fdate,
+        "cluster_signature": compact_text(members[0].file_group_key),
+        "member_paths": ";".join(sorted(paths)),
+        "has_zero": has_zero,
+        "has_24": has_24,
+        "file_count": len(members),
+        "merge_provenance": provenance,
+        "time_points": ";".join(time_points),
+        "condition_key": best_key,
+        "condition_sample": str(best.condition_sample if best else ""),
+        "condition_date": str(best.condition_date if best else ""),
+        "date_delta_days": best.date_delta_days if best else None,
+        "match_status": status,
+        "candidate_options": _candidate_options(ranked, meta, conditions),
+        "reason": reason,
+    }
