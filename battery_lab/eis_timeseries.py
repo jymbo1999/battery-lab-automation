@@ -187,3 +187,53 @@ def _cluster_dict(members: list[EISConditionMatch], provenance: str,
         "candidate_options": _candidate_options(ranked, meta, conditions),
         "reason": reason,
     }
+
+
+def build_time_series_clusters(
+    matches: list[EISConditionMatch],
+    conditions: dict[str, dict[str, Any]],
+) -> list[EISTimeSeriesCluster]:
+    """Re-cluster EIS _hr files into one-cell (0hr->24hr) groups and map each to
+    a journal row. Stage 1 collapses spacing splits; stage 2 merges 0-side and
+    24-side fragments; stage 3 classifies and votes the journal row; finally a
+    journal row claimed by >1 cluster marks those clusters as conflicts."""
+    ts_matches = [m for m in matches if m.is_time_series]
+    stage1 = _stage1_groups(ts_matches)
+
+    by_base: dict[str, list[tuple[str, list[EISConditionMatch]]]] = defaultdict(list)
+    for sig, group in stage1.items():
+        by_base[_base_signature(sig)].append((sig, group))
+
+    cluster_dicts: list[dict[str, Any]] = []
+    for sig_groups in by_base.values():
+        for item in _merge_fragments(sig_groups):
+            cluster_dicts.append(_cluster_dict(item["members"], item["provenance"], conditions))
+
+    cluster_dicts.sort(key=lambda c: (c["folder_date"], c["cluster_signature"], c["member_paths"]))
+
+    row_counts = Counter(c["condition_key"] for c in cluster_dicts if c["condition_key"])
+    clusters: list[EISTimeSeriesCluster] = []
+    for idx, c in enumerate(cluster_dicts, start=1):
+        status, reason = c["match_status"], c["reason"]
+        if c["condition_key"] and row_counts[c["condition_key"]] > 1:
+            status = "conflict"
+            reason = f"같은 일지 행을 {row_counts[c['condition_key']]}개 클러스터가 차지(충돌). " + reason
+        clusters.append(EISTimeSeriesCluster(
+            cluster_id=f"TS{idx:03d}",
+            folder_date=c["folder_date"],
+            cluster_signature=c["cluster_signature"],
+            member_paths=c["member_paths"],
+            time_points=c["time_points"],
+            has_zero=c["has_zero"],
+            has_24=c["has_24"],
+            file_count=c["file_count"],
+            merge_provenance=c["merge_provenance"],
+            condition_key=c["condition_key"],
+            condition_sample=c["condition_sample"],
+            condition_date=c["condition_date"],
+            date_delta_days=c["date_delta_days"],
+            match_status=status,
+            candidate_options=c["candidate_options"],
+            reason=reason,
+        ))
+    return clusters

@@ -107,3 +107,32 @@ def test_cluster_dict_ambiguous_when_rows_compete():
     import json
     opts = json.loads(c["candidate_options"])
     assert {o["condition_key"] for o in opts} == {"k1", "k2"}
+
+
+def test_build_clusters_end_to_end_merges_and_ids():
+    ms = [
+        _m("260521/dl 2t2t_0hr.SEO", "260521 dl 2t2t", "0hr", key="k1", score=70),
+        _m("260521/dl2t2t_24hr.SEO", "260521 dl2t2t", "24hr", key="k1", score=70),
+    ]
+    conds = {"k1": {"_source_row_number": 11, "sample": "dl 2t2t", "date": "260521"}}
+    clusters = ts.build_time_series_clusters(ms, conds)
+    assert len(clusters) == 1
+    c = clusters[0]
+    assert c.cluster_id == "TS001"
+    assert c.time_points == "0hr;24hr" and c.has_zero and c.has_24
+    assert c.match_status == "verified"
+
+
+def test_build_clusters_flags_journal_row_conflict():
+    # Two distinct complete cells both map to the same journal row -> both conflict.
+    ms = [
+        _m("a/c1_0hr.SEO", "260521 a 1", "0hr", key="k1", score=70),
+        _m("a/c1_24hr.SEO", "260521 a 1", "24hr", key="k1", score=70),
+        _m("a/c2_0hr.SEO", "260521 a 2", "0hr", key="k1", score=70),
+        _m("a/c2_24hr.SEO", "260521 a 2", "24hr", key="k1", score=70),
+    ]
+    conds = {"k1": {"_source_row_number": 5, "sample": "a", "date": "260521"}}
+    clusters = ts.build_time_series_clusters(ms, conds)
+    assert len(clusters) == 2
+    assert all(c.match_status == "conflict" for c in clusters)
+    assert all("충돌" in c.reason for c in clusters)
