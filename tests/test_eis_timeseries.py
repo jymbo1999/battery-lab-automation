@@ -176,3 +176,19 @@ def test_real_data_recluster_reduces_fragmentation():
     by_sig = {c.cluster_signature: c for c in clusters}
     assert all(by_sig[s].has_zero and by_sig[s].has_24
                for s in by_sig if s.endswith("dl2t2t") or s.endswith("dl3t3t"))
+
+
+def test_cluster_exposes_attributes_downstream_consumers_use():
+    # viewer_service.py / ui.py / app.html render time-series clusters using these
+    # exact attributes. Guard the contract so a future field rename fails loudly
+    # instead of crashing the Streamlit/Flask viewers (which lack their own tests).
+    ms = [
+        _m("260521/dl 2t2t_0hr.SEO", "260521 dl 2t2t", "0hr", key="k1", sample="dl 2t2t", score=70),
+        _m("260521/dl2t2t_24hr.SEO", "260521 dl2t2t", "24hr", key="k1", sample="dl 2t2t", score=70),
+    ]
+    conds = {"k1": {"_source_row_number": 11, "sample": "dl 2t2t", "date": "260521"}}
+    (c,) = ts.build_time_series_clusters(ms, conds)
+    label = f"{c.cluster_id} · {c.condition_sample or c.cluster_signature} · {c.file_count} files"
+    rel_paths = [item for item in c.member_paths.split(";") if item]
+    assert c.cluster_id == "TS001" and "dl 2t2t" in label
+    assert rel_paths == ["260521/dl 2t2t_0hr.SEO", "260521/dl2t2t_24hr.SEO"]

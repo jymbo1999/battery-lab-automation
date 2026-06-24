@@ -44,10 +44,10 @@ def eis_viewer_options(eis_root: Path, capacity_root: Path, condition_workbook: 
         source_options = path_options(source_paths, eis_root)
         time_series_options = [
             {
-                "value": group.group_id,
-                "label": f"{group.group_id} · {group.condition_sample or group.group_key} · {group.file_count} files",
+                "value": group.cluster_id,
+                "label": f"{group.cluster_id} · {group.condition_sample or group.cluster_signature} · {group.file_count} files",
                 "file_count": group.file_count,
-                "source_paths": group.source_paths,
+                "source_paths": group.member_paths,
             }
             for group in report.time_series_groups
             if group.file_count >= 2
@@ -125,9 +125,9 @@ def eis_overlay_payload(
             title = f"{Path(rel_paths[0]).stem} Nyquist" if rel_paths else "EIS Nyquist"
         elif mode == "time_series":
             groups = [group for group in report.time_series_groups if group.file_count >= 2]
-            group = next((item for item in groups if item.group_id == key), groups[0] if groups else None)
-            rel_paths = [item for item in group.source_paths.split(";") if item] if group else []
-            title = f"{group.condition_sample or group.group_key} time-series Nyquist" if group else "EIS time-series Nyquist"
+            group = next((item for item in groups if item.cluster_id == key), groups[0] if groups else None)
+            rel_paths = [item for item in group.member_paths.split(";") if item] if group else []
+            title = f"{group.condition_sample or group.cluster_signature} time-series Nyquist" if group else "EIS time-series Nyquist"
             color_mode = "time_series"
         else:
             clusters = [cluster for cluster in report.comparison_clusters if cluster.file_count >= 2]

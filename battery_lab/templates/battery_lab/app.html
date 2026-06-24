@@ -693,7 +693,7 @@
       let headers = [];
       if (viewer.dataset.kind === "eis" && mode === "time_series") {
         headers = ["Group", "Sample", "Files", "Time points"];
-        rows = (payload.time_series_groups || []).map((row) => [row.group_id, row.condition_sample || row.group_key, row.file_count, row.time_points]);
+        rows = (payload.time_series_groups || []).map((row) => [row.cluster_id, row.condition_sample || row.cluster_signature, row.file_count, row.time_points]);
       } else if (viewer.dataset.kind === "eis") {
         headers = ["Cluster", "Files", "Conditions", "Loading"];
         rows = (payload.comparison_clusters || []).map((row) => [row.cluster_id, row.file_count, row.condition_count, `${row.loading_min ?? "?"}-${row.loading_max ?? "?"}`]);

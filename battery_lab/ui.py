@@ -1342,11 +1342,11 @@ def render_eis_match_overlay_preview(st: Any, components: Any, report: Any, cond
         if not groups:
             st.info("겹쳐 그릴 시계열 그룹이 없습니다.")
             return
-        labels = [f"{group.group_id} · {group.condition_sample or group.group_key} · {group.file_count} files" for group in groups]
+        labels = [f"{group.cluster_id} · {group.condition_sample or group.cluster_signature} · {group.file_count} files" for group in groups]
         selected = st.selectbox("Time-series group", labels, key="eis_timeseries_overlay_group")
         group = groups[labels.index(selected)]
-        rel_paths = [item for item in group.source_paths.split(";") if item]
-        title = f"{group.condition_sample or group.group_key} time-series Nyquist"
+        rel_paths = [item for item in group.member_paths.split(";") if item]
+        title = f"{group.condition_sample or group.cluster_signature} time-series Nyquist"
     else:
         clusters = [cluster for cluster in report.comparison_clusters if cluster.file_count >= 2]
         all_eis_rel_paths = [str(path.relative_to(EIS_ROOT)) for path in collect_source_files(EIS_ROOT, {".seo", ".sde", ".csv", ".xlsx", ".xls"})]
