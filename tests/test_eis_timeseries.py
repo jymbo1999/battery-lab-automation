@@ -35,3 +35,42 @@ def test_stage1_collapses_spacing_only_split():
     assert len(groups) == 1
     (sig, members), = groups.items()
     assert len(members) == 2
+
+
+def _frags(*pairs):
+    """pairs: (compact_sig, [hr ints]) -> list[(sig, [match])] for _merge_fragments."""
+    out = []
+    for sig, hrs in pairs:
+        out.append((sig, [_m(f"{sig}_{h}hr.SEO", sig, f"{h}hr") for h in hrs]))
+    return out
+
+
+def _hrs_of(members):
+    return sorted(ts.hr_num(m.time_point) for m in members)
+
+
+def test_merge_left_and_right_fragment():
+    # dl 2t2t: [0,1,2,3] + [4,5,8,24] -> one complete cell.
+    res = ts._merge_fragments(_frags(("260521dl2t2t", [0, 1, 2, 3]),
+                                     ("260521dl2t2t", [4, 5, 8, 24])))
+    assert len(res) == 1
+    assert _hrs_of(res[0]["members"]) == [0, 1, 2, 3, 4, 5, 8, 24]
+    assert res[0]["provenance"]  # records what was merged
+
+
+def test_keep_two_real_cells_with_two_zeros():
+    # Both fragments start at 0hr -> two separate cells, never merged.
+    res = ts._merge_fragments(_frags(("260603pure2t1", [0, 1, 2, 9]),
+                                     ("260603pure2t2", [0, 1, 24])))
+    assert len(res) == 2
+
+
+def test_no_merge_on_overlapping_hours():
+    # Disjoint requirement fails (both contain 3hr) -> stay separate, flagged later.
+    res = ts._merge_fragments(_frags(("x", [0, 3]), ("x2", [3, 24])))
+    assert len(res) == 2
+
+
+def test_complete_group_passes_through_untouched():
+    res = ts._merge_fragments(_frags(("c", [0, 6, 24])))
+    assert len(res) == 1 and res[0]["provenance"] == ""

@@ -62,3 +62,57 @@ def _stage1_groups(matches: list[EISConditionMatch]) -> dict[str, list[EISCondit
     for match in matches:
         groups[compact_text(match.file_group_key)].append(match)
     return groups
+
+
+def _hours(group: list[EISConditionMatch]) -> set[int | None]:
+    return {hr_num(m.time_point) for m in group if m.time_point}
+
+
+def _merge_fragments(sig_groups: list[tuple[str, list[EISConditionMatch]]]) -> list[dict[str, Any]]:
+    """Endpoint-rule merge within one base signature.
+
+    A 0-side fragment (has 0hr, no 24hr) merges with a 24-side fragment (has
+    24hr, no 0hr) when their hour sets are disjoint. Complete groups (0 and 24)
+    and groups with neither endpoint are passed through unchanged.
+    """
+    complete: list[list[EISConditionMatch]] = []
+    left: list[tuple[str, list[EISConditionMatch], set[int | None]]] = []
+    right: list[tuple[str, list[EISConditionMatch], set[int | None]]] = []
+    neither: list[list[EISConditionMatch]] = []
+    for sig, group in sig_groups:
+        hours = _hours(group)
+        has0, has24 = 0 in hours, 24 in hours
+        if has0 and has24:
+            complete.append(group)
+        elif has0:
+            left.append((sig, group, hours))
+        elif has24:
+            right.append((sig, group, hours))
+        else:
+            neither.append(group)
+
+    results: list[dict[str, Any]] = [{"members": list(g), "provenance": ""} for g in complete]
+
+    right_sorted = sorted(right, key=lambda x: x[0])
+    used = set()
+    for lsig, lgroup, lh in sorted(left, key=lambda x: x[0]):
+        paired = None
+        for j, (rsig, rgroup, rh) in enumerate(right_sorted):
+            if j in used or (lh & rh):  # already taken, or overlapping hours
+                continue
+            paired = (j, rsig, rgroup, rh)
+            break
+        if paired is None:
+            results.append({"members": list(lgroup), "provenance": ""})
+            continue
+        j, rsig, rgroup, rh = paired
+        used.add(j)
+        prov = f"{lsig}{_fmt_hrs(lh)}+{rsig}{_fmt_hrs(rh)}"
+        results.append({"members": list(lgroup) + list(rgroup), "provenance": prov})
+
+    for j, (rsig, rgroup, rh) in enumerate(right_sorted):
+        if j not in used:
+            results.append({"members": list(rgroup), "provenance": ""})
+    for group in neither:
+        results.append({"members": list(group), "provenance": ""})
+    return results
