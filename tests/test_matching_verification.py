@@ -179,3 +179,23 @@ def test_verification_page_route_renders_html():
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "매칭 검증" in body and "<table" in body
+
+
+def test_path_date_extracts_yymmdd_folder():
+    assert matching_service._path_date("260501/1.5 act 1_01.SEO") == "260501"
+    assert matching_service._path_date("260319/20260319/419_x.wrd") == "260319"  # 6-digit folder, not the 8-digit one
+    assert matching_service._path_date("no date here.wrd") == ""
+
+
+def test_verification_payload_defers_eis_time_series():
+    if not config.BATTERY_EIS_ROOT.exists() or not config.BATTERY_CONDITION_WORKBOOK.exists():
+        pytest.skip("real EIS data / workbook not present")
+    p = matching_service.verification_payload(
+        "eis", config.BATTERY_EIS_ROOT, config.BATTERY_CONDITION_WORKBOOK,
+        config.BATTERY_MATCH_EIS_JSON, condition_sheet="JYJ",
+    )
+    assert all(not r["is_time_series"] for r in p["rows"])          # main matching set = comparison only
+    assert all(r["is_time_series"] for r in p["deferred_rows"])     # deferred = time-series (_hr)
+    assert p["summary"]["deferred_time_series"] == len(p["deferred_rows"])
+    assert len(p["deferred_rows"]) > len(p["rows"])                 # most EIS is _hr
+    assert any(r["file_date"] for r in (p["rows"] + p["deferred_rows"]))  # file date populated

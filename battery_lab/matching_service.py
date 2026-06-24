@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -418,6 +419,15 @@ def explain_capacity_match_status(row: dict[str, Any]) -> str:
 RISKY_REVIEW_STATUSES = {"unmatched", "ambiguous", "blocked", "review", "manual"}
 
 
+_PATH_DATE_RE = re.compile(r"(?<!\d)(\d{6})(?!\d)")
+
+
+def _path_date(relpath: str) -> str:
+    """Best-effort YYMMDD pulled from a dated folder in the path (e.g. '260501/...')."""
+    match = _PATH_DATE_RE.search(str(relpath or ""))
+    return match.group(1) if match else ""
+
+
 def _verification_row(kind: str, m: dict[str, Any], conditions: dict[str, dict[str, Any]]) -> dict[str, Any]:
     cond_key = str(m.get("condition_key") or "")
     cond = conditions.get(cond_key, {}) if cond_key else {}
@@ -438,6 +448,8 @@ def _verification_row(kind: str, m: dict[str, Any], conditions: dict[str, dict[s
         "analysis_type": kind,
         "status": str(m.get("status") or ""),
         "in_scope": bool(cond_key and cond_key in conditions),
+        "is_time_series": bool(m.get("is_time_series")),
+        "file_date": _path_date(rel),
         "journal_row": journal_row,
         "condition_key": cond_key,
         "sample": m.get("condition_sample") or cond.get("sample") or "",
@@ -486,12 +498,18 @@ def verification_payload(
     matches = [asdict(row) for row in report.matches] if report else []
 
     rows: list[dict[str, Any]] = []
+    deferred_rows: list[dict[str, Any]] = []
     unmatched_files: list[str] = []
     used: dict[Any, list[str]] = {}
     for m in matches:
         vrow = _verification_row(kind, m, in_scope_conditions)
         override = overrides.get(vrow["relative_path"]) or {}
         vrow["override_source"] = str(override.get("selection_source") or ("manual" if override else ""))
+        # Time-series EIS (_hr) is held to lower priority: cluster-comparison data is
+        # what urgently needs exact row matching, so _hr files are set aside here.
+        if vrow.get("is_time_series"):
+            deferred_rows.append(vrow)
+            continue
         if vrow["status"] == "unmatched" or not vrow["condition_key"]:
             unmatched_files.append(vrow["relative_path"])
             continue
@@ -516,12 +534,14 @@ def verification_payload(
 
     status_order = {"unmatched": 0, "ambiguous": 1, "blocked": 2, "review": 3, "manual": 4}
     rows.sort(key=lambda row: (status_order.get(row["status"], 9), str(row["journal_row"])))
+    deferred_rows.sort(key=lambda row: (status_order.get(row["status"], 9), str(row["journal_row"])))
 
     return {
         "kind": kind,
         "condition_sheet": condition_sheet,
         "source_count": len(source_paths),
         "rows": rows,
+        "deferred_rows": deferred_rows,
         "orphans": orphans,
         "summary": {
             "in_scope_rows": len(in_scope_conditions),
@@ -531,6 +551,7 @@ def verification_payload(
             "unmatched_files": len(unmatched_files),
             "ambiguous_files": len(ambiguous),
             "duplicate_groups": len(duplicates),
+            "deferred_time_series": len(deferred_rows),
         },
         "invariant": {
             "ambiguous": ambiguous,

@@ -29,12 +29,13 @@ def _badge(status: str) -> str:
 def _summary_bar(s: dict[str, Any]) -> str:
     cells = [
         ("in-scope 행", s.get("in_scope_rows", 0)),
-        ("매칭 파일", s.get("matched_files", 0)),
+        ("매칭(비교용)", s.get("matched_files", 0)),
         ("확인필요", s.get("needs_review", 0)),
         ("모호", s.get("ambiguous_files", 0)),
         ("미매칭", s.get("unmatched_files", 0)),
         ("고아행", s.get("orphan_rows", 0)),
         ("중복그룹", s.get("duplicate_groups", 0)),
+        ("시계열 보류", s.get("deferred_time_series", 0)),
     ]
     inner = "".join(f'<div class="stat"><b>{escape(str(v))}</b><span>{escape(label)}</span></div>' for label, v in cells)
     return f'<div class="stats">{inner}</div>'
@@ -50,22 +51,25 @@ def _rows_table(rows: list[dict[str, Any]]) -> str:
         exact = r.get("row_exact")
         exact_txt = "✅" if exact is True else ("—" if exact is None else "✗")
         delta = r.get("date_delta_days")
+        delta_cls = "bad" if (isinstance(delta, int) and abs(delta) > 7) else ""
         body.append(
             f'<tr class="{"risky" if risky else ""}">'
             f'<td class="file">{escape(str(r.get("source_name") or r.get("relative_path", "")))}</td>'
-            f'<td>{escape(str(r.get("journal_row", "")))}<div class="sub">{escape(str(r.get("sample", "")))}</div></td>'
+            f'<td class="c sub">{escape(str(r.get("file_date", "")))}</td>'
+            f'<td class="c">{escape(str(r.get("journal_row", "")))}<div class="sub">{escape(str(r.get("sample", "")))}</div></td>'
+            f'<td class="c sub">{escape(str(r.get("date", "")))}</td>'
+            f'<td class="c {delta_cls}">{escape(str(delta) if delta is not None else "")}</td>'
             f'<td>{_badge(status)}</td>'
             f'<td class="reason">{escape(str(r.get("reason", "")))}</td>'
             f'<td class="c">{exact_txt}</td>'
             f'<td class="sub">{escape(str(r.get("overlap_tokens", "")))}</td>'
             f'<td class="sub bad">{escape(str(r.get("conflict_tokens", "")))}</td>'
-            f'<td class="c">{escape(str(delta) if delta is not None else "")}</td>'
             f'<td class="c">{escape(str(r.get("score", "")))}</td>'
             "</tr>"
         )
     head = (
-        "<tr><th>파일</th><th>매칭 행</th><th>상태</th><th>근거 (왜 이 행인가)</th>"
-        "<th>행번호<br>일치</th><th>겹친 단서</th><th>충돌</th><th>날짜차</th><th>점수</th></tr>"
+        "<tr><th>파일</th><th>파일<br>날짜</th><th>매칭 행</th><th>행<br>날짜</th><th>날짜<br>차</th>"
+        "<th>상태</th><th>근거 (왜 이 행인가)</th><th>행번호<br>일치</th><th>겹친 단서</th><th>충돌</th><th>점수</th></tr>"
     )
     return f'<table class="grid"><thead>{head}</thead><tbody>{"".join(body)}</tbody></table>'
 
@@ -94,10 +98,18 @@ def _duplicates(invariant: dict[str, Any]) -> str:
 
 def _kind_block(kind: str, payload: dict[str, Any]) -> str:
     title = {"eis": "EIS", "capacity": "Capacity"}.get(kind, kind)
+    deferred = payload.get("deferred_rows", [])
+    deferred_html = (
+        f'<details class="deferred"><summary>시계열(_hr) — 매칭 후순위 보류 ({len(deferred)}개)</summary>'
+        f'{_rows_table(deferred)}</details>'
+        if deferred
+        else ""
+    )
     return (
         f'<section class="kind"><h2>{escape(title)}</h2>'
         f'{_summary_bar(payload.get("summary", {}))}'
         f'{_rows_table(payload.get("rows", []))}'
+        f'{deferred_html}'
         f'{_orphans(payload.get("orphans", []))}'
         f'{_duplicates(payload.get("invariant", {}))}'
         "</section>"
