@@ -18,6 +18,7 @@ from .config import (
     BATTERY_STREAMLIT_URL,
 )
 from .matching_service import build_match_payload, save_match_overrides, save_match_review_actions, save_match_selections, verification_payload
+from .verification_view import render_verification_html
 from .ai_service import ai_status_payload, get_ai_run, run_ai_smoke
 from .excel_dashboard import DEFAULT_CONDITION_SHEET, WorkbookStore, render_page as render_excel_dashboard_page
 from .job_service import (
@@ -556,6 +557,23 @@ def verification_api(kind: str):
         return jsonify(verification_payload(kind, source_root, BATTERY_CONDITION_WORKBOOK, override_path))
     except Exception as exc:  # best-effort; never 500 the review tab
         return jsonify({"kind": kind, "rows": [], "orphans": [], "summary": {}, "error": str(exc)}), 500
+
+
+@blueprint.route("/verification", methods=["GET"])
+def verification_view_page():
+    """Server-rendered evidence table: every in-scope file with the why of its match
+    (verified included), plus orphan rows and duplicates. Read-only."""
+    payloads: dict = {}
+    for kind in ("capacity", "eis"):
+        cfg = _match_api_config(kind)
+        if cfg is None:
+            continue
+        source_root, override_path = cfg
+        try:
+            payloads[kind] = verification_payload(kind, source_root, BATTERY_CONDITION_WORKBOOK, override_path)
+        except Exception as exc:  # never break the page on one kind
+            payloads[kind] = {"kind": kind, "summary": {}, "rows": [], "orphans": [], "invariant": {}, "error": str(exc)}
+    return Response(render_verification_html(payloads), mimetype="text/html")
 
 
 @blueprint.route("/api/eis/viewer/options", methods=["GET"])

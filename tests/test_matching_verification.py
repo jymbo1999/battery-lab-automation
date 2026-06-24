@@ -127,6 +127,39 @@ def test_read_conditions_uses_true_excel_row_not_drifted_by_blanks(tmp_path):
     assert byrow == {2: "A 4T", 4: "B 5T"}  # B at TRUE row 4, not 3 (blank row not collapsed away)
 
 
+def test_render_verification_html_shows_evidence_summary_orphans():
+    from battery_lab import verification_view
+
+    payloads = {
+        "capacity": {
+            "kind": "capacity",
+            "summary": {"in_scope_rows": 125, "matched_files": 117, "needs_review": 0,
+                        "ambiguous_files": 0, "unmatched_files": 0, "orphan_rows": 12, "duplicate_groups": 4},
+            "rows": [{
+                "relative_path": "d/448_1.5act 4T.wrd", "source_name": "448_1.5act 4T.wrd",
+                "analysis_type": "capacity", "status": "verified", "journal_row": 448,
+                "condition_key": "1.5act 4T", "sample": "1.5act 4T", "date": "260507",
+                "row_exact": True, "overlap_tokens": "1.5act", "conflict_tokens": "",
+                "date_delta_days": 0, "score": 140, "margin": 50,
+                "reason": "파일명 앞 행번호 448가 실험일지 행 448와 일치합니다.",
+                "candidate_options": [], "override_source": "",
+            }],
+            "orphans": [{"condition_key": "pure 7T", "journal_row": 501, "sample": "pure 7T", "date": "260601"}],
+            "invariant": {"ambiguous": [], "duplicates": [{"journal_row": 443, "files": ["a.wrd", "b.wrd"]}], "unmatched_count": 0},
+        },
+        "eis": {"kind": "eis", "summary": {"in_scope_rows": 125, "matched_files": 274, "needs_review": 154,
+                "ambiguous_files": 124, "unmatched_files": 38, "orphan_rows": 84, "duplicate_groups": 21},
+                "rows": [], "orphans": [], "invariant": {"ambiguous": [], "duplicates": [], "unmatched_count": 38}},
+    }
+    html = verification_view.render_verification_html(payloads)
+    assert "매칭 검증" in html and "<table" in html
+    assert "448_1.5act 4T.wrd" in html
+    assert "파일명 앞 행번호 448가 실험일지 행 448와 일치합니다." in html  # verified gets its reason shown
+    assert "117" in html and "125" in html       # summary numbers
+    assert "pure 7T" in html                       # orphan row listed
+    assert "확정" in html                          # verified badge label
+
+
 def test_verification_api_route_shape_and_404():
     from battery_lab.flask_app import create_app
 
@@ -137,3 +170,12 @@ def test_verification_api_route_shape_and_404():
     assert "summary" in data and "rows" in data and "orphans" in data and data["kind"] == "eis"
     # unknown kind -> 404
     assert client.get("/battery/api/nope/verification").status_code == 404
+
+
+def test_verification_page_route_renders_html():
+    from battery_lab.flask_app import create_app
+
+    resp = create_app().test_client().get("/battery/verification")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "매칭 검증" in body and "<table" in body
