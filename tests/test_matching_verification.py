@@ -263,3 +263,51 @@ def test_apply_checklist_answers_roundtrip(tmp_path):
     assert saved["260430/pc 91_1_02.SEO"]["journal_row"] == 2  # first data row
     assert saved["260430/junk.SEO"]["action"] == "delete_file"
     assert "260430/dunno.SEO" not in saved and "260430/bad.SEO" not in saved
+
+
+def test_render_verification_html_shows_time_series_clusters():
+    from battery_lab import verification_view
+    payloads = {"eis": {"kind": "eis",
+        "summary": {"in_scope_rows": 125, "matched_files": 28, "needs_review": 0,
+                    "ambiguous_files": 0, "unmatched_files": 0, "orphan_rows": 0,
+                    "duplicate_groups": 0, "time_series_clusters": 2,
+                    "time_series_verified": 1, "time_series_needs_review": 1},
+        "rows": [], "orphans": [], "invariant": {"ambiguous": [], "duplicates": [], "unmatched_count": 0},
+        "deferred_rows": [
+            {"cluster_id": "TS001", "folder_date": "260521", "cluster_signature": "260521dl2t2t",
+             "member_paths": "260521/dl 2t2t_0hr_01.SEO;260521/dl2t2t_24hr_01.SEO",
+             "time_points": "0hr;24hr", "has_zero": True, "has_24": True, "file_count": 2,
+             "merge_provenance": "260521dl2t2t[0]+260521dl2t2t[24]", "condition_key": "k1",
+             "condition_sample": "dl 2t2t", "condition_date": "260521", "date_delta_days": 0,
+             "match_status": "verified", "candidate_options": "[]",
+             "reason": "0hr→24hr 완비 + 단일 일지 행 11 (파일 2개)."},
+            {"cluster_id": "TS002", "folder_date": "260603", "cluster_signature": "260603pure5t1",
+             "member_paths": "260603/pure 5t_1_0hr.SEO", "time_points": "0hr;9hr",
+             "has_zero": True, "has_24": False, "file_count": 5, "merge_provenance": "",
+             "condition_key": "k2", "condition_sample": "pure 5T", "condition_date": "260603",
+             "date_delta_days": 0, "match_status": "ambiguous", "candidate_options": "[]",
+             "reason": "0hr/24hr 끝점이 불완전합니다(병합 후에도 한쪽 결손)."},
+        ]}}
+    html = verification_view.render_verification_html(payloads)
+    assert "시계열" in html
+    assert "TS001" in html and "0hr;24hr" in html
+    assert "260521dl2t2t[0]+260521dl2t2t[24]" in html
+    assert "끝점이 불완전" in html
+
+
+def test_render_checklist_html_offers_cluster_candidates():
+    from battery_lab import checklist_view
+    payloads = {"eis": {"kind": "eis", "summary": {}, "orphans": [], "rows": [], "deferred_rows": [
+        {"cluster_id": "TS002", "folder_date": "260603", "cluster_signature": "260603pure5t1",
+         "member_paths": "260603/pure 5t_1_0hr.SEO;260603/pure 5t_1_9hr.SEO", "time_points": "0hr;9hr",
+         "has_zero": True, "has_24": False, "file_count": 2, "merge_provenance": "",
+         "condition_key": "k2", "condition_sample": "pure 5T", "condition_date": "260603",
+         "date_delta_days": 0, "match_status": "ambiguous",
+         "candidate_options": "[{\"condition_key\": \"k2\", \"journal_row\": 300, \"sample\": \"pure 5T\", \"date\": \"260603\", \"date_delta_days\": 0, \"score\": 140}]",
+         "reason": "끝점 불완전"},
+    ]}}
+    html = checklist_view.render_checklist_html(payloads)
+    assert "TS002" in html
+    assert 'data-cluster="TS002"' in html
+    assert "행 300" in html
+    assert "__delete__" in html

@@ -12,6 +12,8 @@ from typing import Any
 
 _DECISION_STATUSES = {"ambiguous", "review"}
 
+import json as _json
+
 
 def _candidate_options(row: dict[str, Any]) -> str:
     opts = ['<option value="">— 선택 —</option>']
@@ -59,6 +61,73 @@ def _confirmed_list(rows: list[dict[str, Any]]) -> str:
     )
 
 
+def _cluster_candidate_options(cluster: dict[str, Any]) -> str:
+    """Build <option> elements from a cluster's candidate_options (JSON string or list)."""
+    raw = cluster.get("candidate_options") or "[]"
+    if isinstance(raw, str):
+        try:
+            candidates = _json.loads(raw)
+        except Exception:
+            candidates = []
+    else:
+        candidates = list(raw)
+    opts = ['<option value="">— 선택 —</option>']
+    for idx, c in enumerate(candidates):
+        ck = escape(str(c.get("condition_key", "")))
+        delta = c.get("date_delta_days")
+        delta_txt = f"±{delta}일" if delta is not None else "?"
+        label = (
+            f'행 {escape(str(c.get("journal_row", "")))} · {escape(str(c.get("sample", "")))} · '
+            f'{escape(str(c.get("date", "")))} ({delta_txt}, {escape(str(c.get("score", "")))}점)'
+        )
+        rec = " ⟵ 코드 추천" if idx == 0 else ""
+        opts.append(f'<option value="{ck}">{label}{rec}</option>')
+    opts.append('<option value="__delete__">❌ 삭제 대상</option>')
+    opts.append('<option value="__skip__">⏭ 모르겠음 / 보류</option>')
+    return "".join(opts)
+
+
+def _cluster_decision_card(cluster: dict[str, Any]) -> str:
+    cid = escape(str(cluster.get("cluster_id", "")))
+    members = escape(str(cluster.get("member_paths", "")))
+    has_zero = cluster.get("has_zero", False)
+    has_24 = cluster.get("has_24", False)
+    endpoint_txt = ("✅" if has_zero else "✗") + "0hr " + ("✅" if has_24 else "✗") + "24hr"
+    provenance = str(cluster.get("merge_provenance") or "")
+    provenance_html = f'<span class="sub">{escape(provenance)}</span>' if provenance else ""
+    return (
+        f'<div class="card">'
+        f'<div class="chead">'
+        f'<span class="fname">{cid}</span>'
+        f'<span class="fdate">폴더 {escape(str(cluster.get("folder_date", "")))}</span>'
+        f'<span class="fdate">시점: {escape(str(cluster.get("time_points", "")))} · 파일 {escape(str(cluster.get("file_count", "")))}개</span>'
+        f'<span class="fdate">{endpoint_txt}</span>'
+        f'{provenance_html}'
+        f'<span class="badge warn">{escape(str(cluster.get("match_status", "")))}</span>'
+        f'</div>'
+        f'<div class="why">{escape(str(cluster.get("reason", "")))}</div>'
+        f'<div class="pick"><label>올바른 실험일지 행:</label>'
+        f'<select class="ans" data-cluster="{cid}" data-members="{members}">'
+        f'{_cluster_candidate_options(cluster)}</select>'
+        f'</div>'
+        f'</div>'
+    )
+
+
+def _cluster_confirmed_list(clusters: list[dict[str, Any]]) -> str:
+    if not clusters:
+        return ""
+    items = "".join(
+        f'<li><b>{escape(str(c.get("cluster_id", "")))} </b>'
+        f'{escape(str(c.get("condition_sample", "")))} <span class="sub">({escape(str(c.get("condition_date", "")))})</span></li>'
+        for c in clusters
+    )
+    return (
+        f'<details class="fold"><summary>시계열 확정 클러스터 — {len(clusters)}개 (검토용)</summary>'
+        f'<ul class="list">{items}</ul></details>'
+    )
+
+
 def _orphans_note(payloads: dict[str, dict[str, Any]]) -> str:
     chunks = []
     for kind, payload in payloads.items():
@@ -78,6 +147,8 @@ def _orphans_note(payloads: dict[str, dict[str, Any]]) -> str:
 def render_checklist_html(payloads: dict[str, dict[str, Any]]) -> str:
     decision_rows: list[dict[str, Any]] = []
     confirmed_rows: list[dict[str, Any]] = []
+    decision_clusters: list[dict[str, Any]] = []
+    confirmed_clusters: list[dict[str, Any]] = []
     for kind in ("eis", "capacity"):
         payload = payloads.get(kind) or {}
         for row in payload.get("rows", []):
@@ -85,16 +156,24 @@ def render_checklist_html(payloads: dict[str, dict[str, Any]]) -> str:
                 decision_rows.append(row)
             elif str(row.get("status")) in ("verified", "manual"):
                 confirmed_rows.append(row)
+        for cluster in payload.get("deferred_rows", []):
+            if str(cluster.get("match_status")) in _DECISION_STATUSES:
+                decision_clusters.append(cluster)
+            elif str(cluster.get("match_status")) in ("verified", "manual"):
+                confirmed_clusters.append(cluster)
 
-    cards = "".join(_decision_card(r) for r in decision_rows) or '<div class="empty">결정이 필요한 항목이 없습니다 🎉</div>'
+    total_decisions = len(decision_rows) + len(decision_clusters)
+    cards = "".join(_decision_card(r) for r in decision_rows)
+    cluster_cards = "".join(_cluster_decision_card(c) for c in decision_clusters)
+    all_cards = cards + cluster_cards or '<div class="empty">결정이 필요한 항목이 없습니다 🎉</div>'
     body = (
-        f'<section class="block"><h2>결정 필요 — {len(decision_rows)}개</h2>'
+        f'<section class="block"><h2>결정 필요 — {total_decisions}개</h2>'
         f'<p class="hint">아래 각 파일이 어느 실험일지 행의 셀인지 골라주세요. "코드 추천"은 참고용이며, '
         f'행날짜·점수를 보고 다른 후보로 바꾸거나 삭제/보류를 선택할 수 있습니다.</p>'
-        f"{cards}</section>"
-        f'<section class="block">{_confirmed_list(confirmed_rows)}{_orphans_note(payloads)}</section>'
+        f"{all_cards}</section>"
+        f'<section class="block">{_confirmed_list(confirmed_rows)}{_cluster_confirmed_list(confirmed_clusters)}{_orphans_note(payloads)}</section>'
     )
-    return _SHELL.replace("__BODY__", body).replace("__TOTAL__", str(len(decision_rows)))
+    return _SHELL.replace("__BODY__", body).replace("__TOTAL__", str(total_decisions))
 
 
 _SHELL = """<!doctype html>

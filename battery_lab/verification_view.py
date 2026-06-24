@@ -96,12 +96,43 @@ def _duplicates(invariant: dict[str, Any]) -> str:
     return f'<div class="section"><h3>🔁 중복 — 한 행에 파일 2개+ ({len(dups)})</h3><ul class="list">{items}</ul></div>'
 
 
+def _cluster_table(clusters: list[dict[str, Any]]) -> str:
+    if not clusters:
+        return '<div class="empty">표시할 클러스터가 없습니다.</div>'
+    body = []
+    for c in clusters:
+        match_status = str(c.get("match_status", ""))
+        has_zero = c.get("has_zero", False)
+        has_24 = c.get("has_24", False)
+        endpoint_txt = ("✅" if has_zero else "✗") + "0hr " + ("✅" if has_24 else "✗") + "24hr"
+        provenance = str(c.get("merge_provenance") or "")
+        risky = match_status in _RISKY
+        body.append(
+            f'<tr class="{"risky" if risky else ""}">'
+            f'<td class="file">{escape(str(c.get("cluster_id", "")))}</td>'
+            f'<td class="c sub">{escape(str(c.get("folder_date", "")))}</td>'
+            f'<td class="c">{escape(str(c.get("time_points", "")))}</td>'
+            f'<td class="c">{escape(str(c.get("file_count", "")))}</td>'
+            f'<td class="c sub">{endpoint_txt}</td>'
+            f'<td>{escape(str(c.get("condition_sample", "")))} <span class="sub">{escape(str(c.get("condition_date", "")))}</span></td>'
+            f'<td>{_badge(match_status)}</td>'
+            f'<td class="sub">{escape(provenance)}</td>'
+            f'<td class="reason">{escape(str(c.get("reason", "")))}</td>'
+            "</tr>"
+        )
+    head = (
+        "<tr><th>클러스터</th><th>폴더<br>날짜</th><th>시점</th><th>파일수</th>"
+        "<th>끝점</th><th>매칭 조건 / 날짜</th><th>상태</th><th>병합 출처</th><th>근거</th></tr>"
+    )
+    return f'<table class="grid"><thead>{head}</thead><tbody>{"".join(body)}</tbody></table>'
+
+
 def _kind_block(kind: str, payload: dict[str, Any]) -> str:
     title = {"eis": "EIS", "capacity": "Capacity"}.get(kind, kind)
     deferred = payload.get("deferred_rows", [])
     deferred_html = (
-        f'<details class="deferred"><summary>시계열(_hr) — 매칭 후순위 보류 ({len(deferred)}개)</summary>'
-        f'{_rows_table(deferred)}</details>'
+        f'<div class="section"><h3>시계열 클러스터 — {len(deferred)}개</h3>'
+        f'{_cluster_table(deferred)}</div>'
         if deferred
         else ""
     )
