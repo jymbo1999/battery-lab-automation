@@ -63,7 +63,7 @@ class EISMatchingTests(unittest.TestCase):
 
         report = build_eis_match_report(paths, {"1.5 act 4T": base}, root)
 
-        grouped_paths = [set(group.source_paths.split(";")) for group in report.time_series_groups]
+        grouped_paths = [set(group.member_paths.split(";")) for group in report.time_series_groups]
         self.assertEqual(len(grouped_paths), 2)
         self.assertIn({str(Path("260521/0hr/1.5 act 4T_03.SEO")), str(Path("260521/2hr/1.5act 4T 2hr_03.SEO"))}, grouped_paths)
         self.assertIn({str(Path("260521/0hr/1.5 act 4T_2_04.SEO")), str(Path("260521/2hr/1.5act 4T_2 2hr_04.SEO"))}, grouped_paths)

@@ -10,10 +10,13 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from itertools import combinations
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .conditions import REQUIRED_COMPARISON_FIELDS, clean, numeric_diff
 from .file_io import ANALYSIS_EIS, guess_cell_id, guess_time_point
+
+if TYPE_CHECKING:
+    from .eis_timeseries import EISTimeSeriesCluster
 
 
 EIS_SUFFIXES = {".seo", ".sde", ".csv", ".xlsx", ".xls"}
@@ -58,18 +61,6 @@ class EISConditionMatch:
 
 
 @dataclass(frozen=True)
-class EISTimeSeriesGroup:
-    group_id: str
-    group_key: str
-    match_status: str
-    condition_key: str
-    condition_sample: str
-    file_count: int
-    time_points: str
-    source_paths: str
-
-
-@dataclass(frozen=True)
 class EISComparisonCluster:
     cluster_id: str
     electrolyte: str
@@ -107,7 +98,7 @@ class EISMatchReport:
     class_counts: dict[str, int]
     inventory: list[EISFileInventory]
     matches: list[EISConditionMatch]
-    time_series_groups: list[EISTimeSeriesGroup]
+    time_series_groups: list["EISTimeSeriesCluster"]
     comparison_clusters: list[EISComparisonCluster]
     comparison_pairs: list[EISComparisonPair]
 
@@ -159,7 +150,8 @@ def build_eis_match_report(
 ) -> EISMatchReport:
     root = source_root.resolve() if source_root else common_root(source_paths)
     inventory, matches = match_eis_files_to_conditions(source_paths, conditions, root, overrides)
-    time_groups = build_time_series_groups(matches)
+    from .eis_timeseries import build_time_series_clusters
+    time_groups = build_time_series_clusters(matches, conditions)
     clusters, pairs = build_comparison_clusters(matches, conditions)
     return EISMatchReport(
         schema_version=SCHEMA_VERSION,
@@ -404,33 +396,6 @@ def close_candidates(scored: list[dict[str, Any]], *, max_rows: int = 8) -> list
         return []
     best_score = int(scored[0]["score"])
     return [row for row in scored if int(row["score"]) >= best_score - 10][:max_rows]
-
-
-def build_time_series_groups(matches: list[EISConditionMatch]) -> list[EISTimeSeriesGroup]:
-    grouped: dict[str, list[EISConditionMatch]] = defaultdict(list)
-    for match in matches:
-        if not match.is_time_series:
-            continue
-        grouped[match.file_group_key].append(match)
-    rows = []
-    for idx, (key, group) in enumerate(sorted(grouped.items()), start=1):
-        condition_key = first_value(match.condition_key for match in group)
-        sample = first_value(match.condition_sample for match in group)
-        status_counts = Counter(match.status for match in group)
-        status = status_counts.most_common(1)[0][0] if status_counts else "unmatched"
-        rows.append(
-            EISTimeSeriesGroup(
-                group_id=f"TS{idx:03d}",
-                group_key=key,
-                match_status=status,
-                condition_key=condition_key,
-                condition_sample=sample,
-                file_count=len(group),
-                time_points=";".join(sorted({natural_time(match.time_point) for match in group if match.time_point}, key=time_sort_key)),
-                source_paths=";".join(match.relative_path for match in group),
-            )
-        )
-    return rows
 
 
 def build_comparison_clusters(

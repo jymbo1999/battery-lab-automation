@@ -136,3 +136,19 @@ def test_build_clusters_flags_journal_row_conflict():
     assert len(clusters) == 2
     assert all(c.match_status == "conflict" for c in clusters)
     assert all("충돌" in c.reason for c in clusters)
+
+
+def test_report_uses_clusters(tmp_path):
+    from pathlib import Path
+    from battery_lab import eis_matching
+
+    root = tmp_path
+    (root / "260521").mkdir()
+    for name in ("dl 2t2t_0hr_01.SEO", "dl2t2t_24hr_01.SEO"):
+        (root / "260521" / name).write_text("x", encoding="utf-8")
+    conditions = {"k1": {"_source_row_number": 11, "sample": "dl 2t2t",
+                         "date": "260521", "cell_id": "dl 2t2t"}}
+    paths = list((root / "260521").glob("*.SEO"))
+    report = eis_matching.build_eis_match_report(paths, conditions, root)
+    assert all(isinstance(g, ts.EISTimeSeriesCluster) for g in report.time_series_groups)
+    assert len(report.time_series_groups) == 1
