@@ -560,3 +560,55 @@ def verification_payload(
         },
         "report_ready": report is not None,
     }
+
+
+def apply_checklist_answers(
+    answers: dict[str, Any],
+    condition_workbook: Path,
+    override_path: Path,
+    *,
+    condition_sheet: str | None = "JYJ",
+) -> dict[str, Any]:
+    """Merge the research lead's filled checklist back into overrides.json.
+
+    `answers` is the exported blob: {"answers": {file: {"choice": <condition_key|__delete__|__skip__>, "memo": ...}}}.
+    A chosen condition_key writes the same manual-override shape the review tab uses, so
+    matching picks it up immediately (and the render cache invalidates via override mtime).
+    """
+    data = answers.get("answers", answers) if isinstance(answers, dict) else {}
+    conditions = read_conditions(condition_workbook, sheet_name=condition_sheet) if condition_workbook.exists() else {}
+    overrides = load_match_overrides(override_path)
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    applied = deleted = skipped = unknown = 0
+    for file_key, ans in (data or {}).items():
+        choice = str((ans or {}).get("choice") or "").strip()
+        memo = str((ans or {}).get("memo") or "")
+        if not choice or choice == "__skip__":
+            skipped += 1
+            continue
+        if choice == "__delete__":
+            overrides[str(file_key)] = {
+                "action": "delete_file",
+                "delete_candidate": True,
+                "reason": memo or "checklist_delete",
+                "selection_source": "checklist",
+                "selected_at": now,
+            }
+            deleted += 1
+            continue
+        condition = conditions.get(choice)
+        if condition is None:
+            unknown += 1
+            continue
+        overrides[str(file_key)] = {
+            "condition_key": choice,
+            "journal_row": condition.get("_source_row_number"),
+            "sample": condition.get("sample") or choice,
+            "date": condition.get("date") or "",
+            "memo": memo,
+            "selection_source": "checklist",
+            "selected_at": now,
+        }
+        applied += 1
+    save_match_overrides(override_path, overrides)
+    return {"applied": applied, "deleted": deleted, "skipped": skipped, "unknown": unknown, "override_count": len(overrides)}

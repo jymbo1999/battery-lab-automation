@@ -199,3 +199,50 @@ def test_verification_payload_defers_eis_time_series():
     assert p["summary"]["deferred_time_series"] == len(p["deferred_rows"])
     assert len(p["deferred_rows"]) > len(p["rows"])                 # most EIS is _hr
     assert any(r["file_date"] for r in (p["rows"] + p["deferred_rows"]))  # file date populated
+
+
+def test_render_checklist_html_has_inputs_and_candidates():
+    from battery_lab import checklist_view
+
+    payloads = {"eis": {"kind": "eis", "summary": {}, "orphans": [], "deferred_rows": [], "rows": [
+        {"relative_path": "260430/pc 91_1_02.SEO", "source_name": "pc 91_1_02.SEO", "status": "ambiguous",
+         "file_date": "260430", "sample": "pc 91_6T_1", "journal_row": 432, "reason": "상위 후보가 가깝습니다.",
+         "candidate_options": [
+             {"condition_key": "pc 91_6T_1", "journal_row": 432, "sample": "pc 91_6T_1", "date": "260430", "date_delta_days": 1, "score": 59},
+             {"condition_key": "pc 91_6T_2", "journal_row": 433, "sample": "pc 91_6T_2", "date": "260430", "date_delta_days": 1, "score": 56},
+         ]},
+        {"relative_path": "260430/v.SEO", "source_name": "v.SEO", "status": "verified", "journal_row": 400, "sample": "x", "candidate_options": []},
+    ]}}
+    html = checklist_view.render_checklist_html(payloads)
+    assert "매칭 확인 체크리스트" in html
+    assert 'select class="ans" data-file="260430/pc 91_1_02.SEO"' in html
+    assert "행 432" in html and "행 433" in html      # both candidates offered
+    assert "__delete__" in html and "__skip__" in html
+    assert "이미 확정" in html                          # verified collapsed for spot-check
+    assert "battery_matching_checklist_v1" in html      # localStorage key (round-trip)
+
+
+def test_apply_checklist_answers_roundtrip(tmp_path):
+    import json as _json
+
+    csv = tmp_path / "cond.csv"
+    csv.write_text(
+        "sample,참고,전해질,종류,Binder,Voltage range\n"
+        "pc 91_6T_1,12파이_Cu foil,1.0M LiPF6 EC/DEC 1:1,LIB,2wt% cmc,0.01~2V\n"
+        "pc 91_6T_2,12파이_Cu foil,1.0M LiPF6 EC/DEC 1:1,LIB,2wt% cmc,0.01~2V\n",
+        encoding="utf-8",
+    )
+    ov = tmp_path / "ov.json"
+    answers = {"version": 1, "answers": {
+        "260430/pc 91_1_02.SEO": {"choice": "pc 91_6T_1", "memo": "확실"},
+        "260430/junk.SEO": {"choice": "__delete__", "memo": "중복본"},
+        "260430/dunno.SEO": {"choice": "__skip__"},
+        "260430/bad.SEO": {"choice": "no such key"},
+    }}
+    res = matching_service.apply_checklist_answers(answers, csv, ov)
+    assert res == {"applied": 1, "deleted": 1, "skipped": 1, "unknown": 1, "override_count": 2}
+    saved = _json.loads(ov.read_text(encoding="utf-8"))
+    assert saved["260430/pc 91_1_02.SEO"]["condition_key"] == "pc 91_6T_1"
+    assert saved["260430/pc 91_1_02.SEO"]["journal_row"] == 2  # first data row
+    assert saved["260430/junk.SEO"]["action"] == "delete_file"
+    assert "260430/dunno.SEO" not in saved and "260430/bad.SEO" not in saved

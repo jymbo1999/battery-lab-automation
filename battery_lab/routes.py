@@ -17,8 +17,9 @@ from .config import (
     BATTERY_OUTPUT_ROOT,
     BATTERY_STREAMLIT_URL,
 )
-from .matching_service import build_match_payload, save_match_overrides, save_match_review_actions, save_match_selections, verification_payload
+from .matching_service import apply_checklist_answers, build_match_payload, save_match_overrides, save_match_review_actions, save_match_selections, verification_payload
 from .verification_view import render_verification_html
+from .checklist_view import render_checklist_html
 from .ai_service import ai_status_payload, get_ai_run, run_ai_smoke
 from .excel_dashboard import DEFAULT_CONDITION_SHEET, WorkbookStore, render_page as render_excel_dashboard_page
 from .job_service import (
@@ -574,6 +575,37 @@ def verification_view_page():
         except Exception as exc:  # never break the page on one kind
             payloads[kind] = {"kind": kind, "summary": {}, "rows": [], "orphans": [], "invariant": {}, "error": str(exc)}
     return Response(render_verification_html(payloads), mimetype="text/html")
+
+
+@blueprint.route("/checklist", methods=["GET"])
+def checklist_page():
+    """Self-contained fillable checklist HTML (send to the research lead via KakaoTalk)."""
+    payloads: dict = {}
+    for kind in ("eis", "capacity"):
+        cfg = _match_api_config(kind)
+        if cfg is None:
+            continue
+        source_root, override_path = cfg
+        try:
+            payloads[kind] = verification_payload(kind, source_root, BATTERY_CONDITION_WORKBOOK, override_path)
+        except Exception as exc:
+            payloads[kind] = {"kind": kind, "rows": [], "orphans": [], "deferred_rows": [], "summary": {}, "error": str(exc)}
+    return Response(render_checklist_html(payloads), mimetype="text/html")
+
+
+@blueprint.route("/api/checklist/apply", methods=["POST"])
+def checklist_apply_api():
+    """Apply the lead's returned checklist answers (JSON blob) into overrides.json."""
+    kind = request.args.get("kind", "eis")
+    cfg = _match_api_config(kind)
+    if cfg is None:
+        abort(404)
+    _, override_path = cfg
+    body = request.get_json(silent=True) or {}
+    try:
+        return jsonify(apply_checklist_answers(body, BATTERY_CONDITION_WORKBOOK, override_path))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
 
 
 @blueprint.route("/api/eis/viewer/options", methods=["GET"])
