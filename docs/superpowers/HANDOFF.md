@@ -7,18 +7,22 @@
 
 ---
 
-## 0. 다음 세션에서 할 일 (NEXT TASK) — EIS 시계열 클러스터링 개선
+## 0. 다음 세션에서 할 일 (NEXT TASKS)
 
-사용자가 준 단서를 **그대로** 옮긴다(다음 세션은 "우선 계획부터" 짜고, 추측 말고 실데이터로 검증하며 진행):
+매칭은 안정화됨(capacity 117 verified · EIS 비교 28 확정 · EIS 시계열 35 TS클러스터). 시계열 재클러스터링(`eis_timeseries.py`, 끝점규칙+행투표+conflict)·비교클러스터 정리는 **완료**. 남은 것:
 
-> 시계열 데이터 클러스터링이 지금 애매함. 중요한 단서: **모든 클러스터는 항상 0hr, 24hr 끝점 데이터가 존재**한다. 그러나 그 사이 hr 값들의 개수는 약간 차이가 있을 수 있다. 그래서 지금 잘못된 클러스터가 `[1hr 2hr 3hr]` `[0hr 22hr 24hr]` 이렇게 쪼개져 있다면 사실 **별개 클러스터가 아닐 수 있다**(원래 한 클러스터를 잘못 분할). 이 규칙(클러스터는 0hr→24hr 한 묶음)을 적용해 클러스터를 다시 정확히 유추하면 더 많이 정상화될 것. 직접 확인-검증하며 단계적으로 알고리즘을 짜서 제시할 것.
-> 그리고 **같은 실험에서 나온 여러 시각(hr)의 파일들은 실험일지상 행 하나에 대응**시키면 된다(시계열 그룹 1개 ↔ 일지 행 1개 ↔ 셀 1개).
+**(A) 비교 클러스터 "시계열 포함" 토글 UI** — 데이터는 준비 끝. 비교 클러스터는 이제 **non-time-series 셀로만 정의**(깨끗)되고, 조건이 맞는 시계열 셀의 24hr 대표가 `EISComparisonCluster.optional_source_paths`로 붙어 있음(실데이터: C001 +2, C002 +6). 남은 일 = 뷰어 토글:
+  - `viewer_service.eis_viewer_options` comparison_options에 optional 개수/경로 노출.
+  - `viewer_service.eis_overlay_payload`(mode="comparison")에 `include_time_series` 파라미터 추가 → True면 `source_paths`+`optional_source_paths` 합쳐 오버레이.
+  - `app.html` EIS live viewer에 체크박스.
 
-**시작 지점(직전 세션이 분류기 장애로 중단된 곳):**
-- 현재 시계열 그룹핑: `battery_lab/eis_matching.py`의 `build_time_series_groups`, `eis_group_key`, `guess_time_point`, `has_hr_token`. 인벤토리에서 `is_time_series`/`time_point` 부여(`inventory_for_path`).
-- `EISTimeSeriesGroup` dataclass: `group_id, group_key, condition_sample, file_count, time_points(;구분 문자열), source_paths`.
-- 검증 페이로드에서 시계열은 `deferred_rows`로 빠져 있음(264개). `is_time_series=True`.
-- **다음 세션 1단계(권장):** 실데이터로 현재 시계열 그룹들의 `time_points`를 뽑아 (a) 0hr/24hr 끝점 유무, (b) 같은 셀(sample)이 여러 그룹으로 쪼개졌는지, (c) `[1,2,3]`+`[0,22,24]`처럼 합쳐야 할 후보가 있는지 표로 확인 → 그 위에서 재클러스터링 알고리즘 제안. (그 다음 시계열 그룹 ↔ 일지 행 1:1 매핑까지.)
+**(B) Thickness(두께) 비교 모드** — 사용자 요청: 같은 sample_base를 두께(2T/3T/5T/7T…)별로 비교. 현재 클러스터 축은 (electrolyte/binder/voltage/ratio)+loading이라 두께가 갈림. 새 비교 축: (backbone + sample_base)로 묶고 멤버=다른 두께. sample에서 `\d+T` 파싱 필요.
+
+**(대기) 시계열 conflict 19개** — `battery_visual_outputs/matching_checklist.html`(재생성됨; 19 conflict + 5 ambiguous 클러스터 카드 포함)을 담당자에게 전송 → 회신 JSON을 `matching_service.apply_checklist_answers`로 반영(클러스터 답변은 member 파일로 fan-out). 담당자 응답 대기중.
+
+**용어 메모:** "loading" == areal mass density (mg/cm²) — 동의어.
+
+**이번 세션 버그픽스:** `verification_payload`가 capacity에서 `is_time_series`/`time_series_groups` 접근으로 crash하던 것 수정(`.get`/`getattr`). 이 때문에 체크리스트 생성이 막혀 있었음 → 이제 정상. 회귀테스트 추가.
 
 ---
 
