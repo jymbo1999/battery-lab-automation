@@ -73,6 +73,7 @@ class EISComparisonCluster:
     condition_count: int
     source_paths: str
     condition_keys: str
+    optional_source_paths: str = ""  # matching time-series cells (24hr reps), toggle-able in the viewer
 
 
 @dataclass(frozen=True)
@@ -421,14 +422,31 @@ def _pick_endpoint_member(member_paths: str, match_by_path: dict[str, "EISCondit
     return best or (members[0] if members else "")
 
 
-def _comparison_cells(
+def _primary_cells(
     matches: list[EISConditionMatch],
-    ts_clusters: list,
     conditions: dict[str, dict[str, Any]],
 ) -> list[_ComparisonCell]:
-    """One comparable cell per journal row that has EIS data. Time-series cells are
-    represented by their 24hr endpoint file; single-shot cells by a (verified-preferred)
-    file. Lets time-series cells join the comparison C-clusters — one curve per cell."""
+    """Non-time-series comparison cells — one (verified-preferred) file per journal row.
+    These DEFINE the comparison clusters; time-series data is attached separately."""
+    comparison: dict[str, list[EISConditionMatch]] = defaultdict(list)
+    for match in matches:
+        if match.is_time_series:
+            continue
+        if match.status in {"verified", "review", "ambiguous", "manual"} and match.condition_key in conditions:
+            comparison[match.condition_key].append(match)
+    cells: list[_ComparisonCell] = []
+    for key, group in comparison.items():
+        group.sort(key=lambda m: (0 if m.status in ("verified", "manual") else 1, m.relative_path))
+        cells.append(_ComparisonCell(condition_key=key, relative_path=group[0].relative_path))
+    return cells
+
+
+def _time_series_cells(
+    ts_clusters: list,
+    matches: list[EISConditionMatch],
+    conditions: dict[str, dict[str, Any]],
+) -> list[_ComparisonCell]:
+    """Time-series cells represented by their 24hr endpoint file, keyed by journal row."""
     match_by_path = {match.relative_path: match for match in matches}
     reps: dict[str, str] = {}
     for ts in sorted(ts_clusters, key=lambda t: (0 if t.match_status == "verified" else 1, t.cluster_id)):
@@ -436,16 +454,33 @@ def _comparison_cells(
             rep = _pick_endpoint_member(ts.member_paths, match_by_path, 24)
             if rep:
                 reps.setdefault(ts.condition_key, rep)
-    comparison: dict[str, list[EISConditionMatch]] = defaultdict(list)
-    for match in matches:
-        if match.is_time_series:
-            continue
-        if match.status in {"verified", "review", "ambiguous", "manual"} and match.condition_key in conditions:
-            comparison[match.condition_key].append(match)
-    for key, group in comparison.items():
-        group.sort(key=lambda m: (0 if m.status in ("verified", "manual") else 1, m.relative_path))
-        reps.setdefault(key, group[0].relative_path)
     return [_ComparisonCell(condition_key=key, relative_path=path) for key, path in reps.items()]
+
+
+def _attach_time_series(
+    component: list[_ComparisonCell],
+    required_key: tuple,
+    ts_cells: list[_ComparisonCell],
+    conditions: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Time-series cells whose conditions match this cluster (same backbone + loading
+    within 1.0 mg/cm2 of a member) — offered as optional, toggle-able overlay members."""
+    member_loads = [to_float(conditions[cell.condition_key].get("areal_mass_density")) for cell in component]
+    member_loads = [value for value in member_loads if value is not None]
+    primary_keys = {cell.condition_key for cell in component}
+    attached: list[str] = []
+    for cell in ts_cells:
+        if cell.condition_key in primary_keys:
+            continue
+        condition = conditions.get(cell.condition_key, {})
+        if tuple(clean(condition.get(field)) for field in REQUIRED_COMPARISON_FIELDS) != required_key:
+            continue
+        load = to_float(condition.get("areal_mass_density"))
+        if load is None or not member_loads:
+            continue
+        if min(abs(load - other) for other in member_loads) <= 1.0:
+            attached.append(cell.relative_path)
+    return attached
 
 
 def build_comparison_clusters(
@@ -453,7 +488,8 @@ def build_comparison_clusters(
     ts_clusters: list,
     conditions: dict[str, dict[str, Any]],
 ) -> tuple[list[EISComparisonCluster], list[EISComparisonPair]]:
-    usable = _comparison_cells(matches, ts_clusters, conditions)
+    usable = _primary_cells(matches, conditions)
+    ts_cells = _time_series_cells(ts_clusters, matches, conditions)
     buckets: dict[tuple[str, str, str, str], list[EISConditionMatch]] = defaultdict(list)
     for match in usable:
         condition = conditions[match.condition_key]
@@ -471,6 +507,7 @@ def build_comparison_clusters(
             cluster_idx += 1
             loads = [to_float(conditions[match.condition_key].get("areal_mass_density")) for match in component]
             valid_loads = [value for value in loads if value is not None]
+            optional = _attach_time_series(component, required_key, ts_cells, conditions)
             clusters.append(
                 EISComparisonCluster(
                     cluster_id=cluster_id,
@@ -484,6 +521,7 @@ def build_comparison_clusters(
                     condition_count=len({match.condition_key for match in component}),
                     source_paths=";".join(match.relative_path for match in component),
                     condition_keys=";".join(sorted({match.condition_key for match in component})),
+                    optional_source_paths=";".join(sorted(set(optional))),
                 )
             )
             for left, right in combinations(component, 2):
