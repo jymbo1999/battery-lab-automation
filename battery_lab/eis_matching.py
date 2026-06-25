@@ -152,7 +152,7 @@ def build_eis_match_report(
     inventory, matches = match_eis_files_to_conditions(source_paths, conditions, root, overrides)
     from .eis_timeseries import build_time_series_clusters
     time_groups = build_time_series_clusters(matches, conditions)
-    clusters, pairs = build_comparison_clusters(matches, conditions)
+    clusters, pairs = build_comparison_clusters(matches, time_groups, conditions)
     return EISMatchReport(
         schema_version=SCHEMA_VERSION,
         created_at=datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
@@ -398,15 +398,62 @@ def close_candidates(scored: list[dict[str, Any]], *, max_rows: int = 8) -> list
     return [row for row in scored if int(row["score"]) >= best_score - 10][:max_rows]
 
 
+@dataclass(frozen=True)
+class _ComparisonCell:
+    condition_key: str
+    relative_path: str
+
+
+def _pick_endpoint_member(member_paths: str, match_by_path: dict[str, "EISConditionMatch"], target_hr: int = 24) -> str:
+    """Pick the time-series member file closest to `target_hr` (default 24hr endpoint)."""
+    from .eis_timeseries import hr_num
+
+    members = [path for path in member_paths.split(";") if path]
+    best, best_dist = "", None
+    for path in members:
+        match = match_by_path.get(path)
+        hours = hr_num(match.time_point) if match else None
+        if hours is None:
+            continue
+        dist = abs(target_hr - hours)
+        if best_dist is None or dist < best_dist:
+            best, best_dist = path, dist
+    return best or (members[0] if members else "")
+
+
+def _comparison_cells(
+    matches: list[EISConditionMatch],
+    ts_clusters: list,
+    conditions: dict[str, dict[str, Any]],
+) -> list[_ComparisonCell]:
+    """One comparable cell per journal row that has EIS data. Time-series cells are
+    represented by their 24hr endpoint file; single-shot cells by a (verified-preferred)
+    file. Lets time-series cells join the comparison C-clusters — one curve per cell."""
+    match_by_path = {match.relative_path: match for match in matches}
+    reps: dict[str, str] = {}
+    for ts in sorted(ts_clusters, key=lambda t: (0 if t.match_status == "verified" else 1, t.cluster_id)):
+        if ts.condition_key and ts.condition_key in conditions:
+            rep = _pick_endpoint_member(ts.member_paths, match_by_path, 24)
+            if rep:
+                reps.setdefault(ts.condition_key, rep)
+    comparison: dict[str, list[EISConditionMatch]] = defaultdict(list)
+    for match in matches:
+        if match.is_time_series:
+            continue
+        if match.status in {"verified", "review", "ambiguous", "manual"} and match.condition_key in conditions:
+            comparison[match.condition_key].append(match)
+    for key, group in comparison.items():
+        group.sort(key=lambda m: (0 if m.status in ("verified", "manual") else 1, m.relative_path))
+        reps.setdefault(key, group[0].relative_path)
+    return [_ComparisonCell(condition_key=key, relative_path=path) for key, path in reps.items()]
+
+
 def build_comparison_clusters(
     matches: list[EISConditionMatch],
+    ts_clusters: list,
     conditions: dict[str, dict[str, Any]],
 ) -> tuple[list[EISComparisonCluster], list[EISComparisonPair]]:
-    usable = [
-        match
-        for match in matches
-        if not match.is_time_series and match.status in {"verified", "review", "ambiguous", "manual"} and match.condition_key in conditions
-    ]
+    usable = _comparison_cells(matches, ts_clusters, conditions)
     buckets: dict[tuple[str, str, str, str], list[EISConditionMatch]] = defaultdict(list)
     for match in usable:
         condition = conditions[match.condition_key]

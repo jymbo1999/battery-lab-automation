@@ -112,7 +112,6 @@
       <div class="battery-nav-label">분석</div>
       <a class="{% if page == 'eis' %}active{% endif %}" href="{{ url_for('battery_lab.eis') }}">EIS</a>
       <a class="{% if page == 'capacity' %}active{% endif %}" href="{{ url_for('battery_lab.capacity') }}">Capacity</a>
-      <a class="{% if page == 'review_EIS_capacity' %}active{% endif %}" href="{{ url_for('battery_lab.review_eis_capacity') }}">매칭 검토</a>
       <div class="battery-nav-label">운영</div>
       <a class="{% if page == 'jobs' %}active{% endif %}" href="{{ url_for('battery_lab.jobs') }}">Jobs</a>
       <a class="{% if page == 'settings' %}active{% endif %}" href="{{ url_for('battery_lab.settings') }}">Settings</a>
