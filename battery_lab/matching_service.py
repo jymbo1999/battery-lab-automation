@@ -502,7 +502,7 @@ def verification_payload(
     unmatched_files: list[str] = []
     used: dict[Any, list[str]] = {}
     for m in matches:
-        if m["is_time_series"]:
+        if m.get("is_time_series"):  # capacity matches lack this key -> falsy -> treated as comparison
             continue  # time-series handled as clusters below
         vrow = _verification_row(kind, m, in_scope_conditions)
         override = overrides.get(vrow["relative_path"]) or {}
@@ -529,7 +529,8 @@ def verification_payload(
     duplicates = [{"journal_row": jr, "files": files} for jr, files in used.items() if len(files) > 1]
     needs_review = [row["relative_path"] for row in rows if row["status"] in RISKY_REVIEW_STATUSES]
 
-    deferred_rows = [asdict(cluster) for cluster in (report.time_series_groups if report else [])]
+    # Only the EIS report carries time-series clusters; capacity has none.
+    deferred_rows = [asdict(cluster) for cluster in (getattr(report, "time_series_groups", []) if report else [])]
 
     status_order = {"unmatched": 0, "ambiguous": 1, "blocked": 2, "review": 3, "manual": 4}
     rows.sort(key=lambda row: (status_order.get(row["status"], 9), str(row["journal_row"])))

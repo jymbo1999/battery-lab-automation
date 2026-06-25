@@ -367,3 +367,18 @@ def test_checklist_js_serializes_cluster_answers_with_members():
     assert "dataset.cluster" in html
     assert "dataset.members" in html
     assert 'data-members="260603/pure 5t_1_0hr.SEO;260603/pure 5t_1_9hr.SEO"' in html
+
+
+def test_verification_payload_capacity_has_no_time_series_clusters():
+    # Regression: verification_payload for capacity must not touch EIS-only fields
+    # (CapacityConditionMatch has no is_time_series; CapacityMatchReport has no
+    # time_series_groups). Previously this raised KeyError / AttributeError.
+    if not config.BATTERY_CAPACITY_ROOT.exists() or not config.BATTERY_CONDITION_WORKBOOK.exists():
+        pytest.skip("real capacity data / workbook not present")
+    p = matching_service.verification_payload(
+        "capacity", config.BATTERY_CAPACITY_ROOT, config.BATTERY_CONDITION_WORKBOOK,
+        config.BATTERY_MATCH_CAPACITY_JSON, condition_sheet="JYJ",
+    )
+    assert p["kind"] == "capacity"
+    assert p["deferred_rows"] == []  # capacity has no time-series clusters
+    assert p["summary"]["matched_files"] >= 0
