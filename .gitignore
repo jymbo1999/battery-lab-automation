@@ -6,6 +6,11 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
+# tool / build artifacts
+.omc/
+.omx/
+*.egg-info/
+
 # 절대 GitHub에 올리지 말 것
 ../capacity/
 ../EIS/

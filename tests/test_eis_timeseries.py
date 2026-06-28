@@ -2,11 +2,11 @@ from battery_lab.eis_matching import EISConditionMatch
 from battery_lab import eis_timeseries as ts
 
 
-def _m(rel, group_key, tp, *, key="", sample="", date="", delta=None, score=70):
+def _m(rel, group_key, tp, *, key="", sample="", date="", delta=None, score=70, status="review"):
     """Build a minimal time-series EISConditionMatch for tests."""
     return EISConditionMatch(
         source_path=rel, relative_path=rel, is_time_series=True,
-        file_group_key=group_key, time_point=tp, status="review", score=score, margin=0,
+        file_group_key=group_key, time_point=tp, status=status, score=score, margin=0,
         condition_key=key, condition_sample=sample, condition_date=date, date_delta_days=delta,
     )
 
@@ -58,6 +58,32 @@ def test_merge_left_and_right_fragment():
     assert res[0]["provenance"]  # records what was merged
 
 
+def test_merge_manual_same_row_three_fragments():
+    # Operator-confirmed row fragments can span early/mid/24hr file groups.
+    res = ts._merge_fragments([
+        ("row473early", [_m("early_0hr.SEO", "row473 early", "0hr", key="k473", status="manual"),
+                         _m("early_7hr.SEO", "row473 early", "7hr", key="k473", status="manual")]),
+        ("row473mid", [_m("mid_5hr.SEO", "row473 mid", "5hr", key="k473", status="manual"),
+                       _m("mid_6hr.SEO", "row473 mid", "6hr", key="k473", status="manual")]),
+        ("row473late", [_m("late_9hr.SEO", "row473 late", "9hr", key="k473", status="manual"),
+                        _m("late_24hr.SEO", "row473 late", "24hr", key="k473", status="manual")]),
+    ])
+    assert len(res) == 1
+    assert _hrs_of(res[0]["members"]) == [0, 5, 6, 7, 9, 24]
+    assert "row473early" in res[0]["provenance"]
+
+
+def test_manual_same_row_with_overlapping_hour_stays_split():
+    # Duplicate/empty re-measurement files are kept visible instead of silently
+    # merged when the same hour appears in more than one fragment.
+    res = ts._merge_fragments([
+        ("row506again", [_m("again_6hr.SEO", "row506 again", "6hr", key="k506", status="manual")]),
+        ("row506main", [_m("main_0hr.SEO", "row506 main", "0hr", key="k506", status="manual"),
+                        _m("main_6hr.SEO", "row506 main", "6hr", key="k506", status="manual")]),
+    ])
+    assert len(res) == 2
+
+
 def test_keep_two_real_cells_with_two_zeros():
     # Both fragments start at 0hr -> two separate cells, never merged.
     res = ts._merge_fragments(_frags(("260603pure2t1", [0, 1, 2, 9]),
@@ -98,6 +124,17 @@ def test_cluster_dict_ambiguous_when_endpoint_missing():
     assert "끝점" in c["reason"]
 
 
+def test_cluster_dict_manual_override_resolves_missing_endpoint():
+    members = [
+        _m("260603/pure 5t_1_0hr.SEO", "260603 pure 5t 1", "0hr", key="k1", score=70, status="manual"),
+        _m("260603/pure 5t_1_9hr.SEO", "260603 pure 5t 1", "9hr", key="k1", score=70, status="manual"),
+    ]
+    conds = {"k1": {"_source_row_number": 300, "sample": "pure 5T", "date": "260603"}}
+    c = ts._cluster_dict(members, "", conds)
+    assert c["match_status"] == "manual"
+    assert "수동 확정" in c["reason"]
+
+
 def test_cluster_dict_ambiguous_when_rows_compete():
     members = [_m("a/x_0hr.SEO", "g", "0hr", key="k1", score=70),
                _m("a/x_24hr.SEO", "g", "24hr", key="k2", score=68)]
@@ -136,6 +173,19 @@ def test_build_clusters_flags_journal_row_conflict():
     assert len(clusters) == 2
     assert all(c.match_status == "conflict" for c in clusters)
     assert all("충돌" in c.reason for c in clusters)
+
+
+def test_build_clusters_does_not_reconflict_manual_same_row_answers():
+    ms = [
+        _m("a/c1_0hr.SEO", "260521 a 1", "0hr", key="k1", score=70, status="manual"),
+        _m("a/c1_24hr.SEO", "260521 a 1", "24hr", key="k1", score=70, status="manual"),
+        _m("a/c2_0hr.SEO", "260521 a 2", "0hr", key="k1", score=70, status="manual"),
+        _m("a/c2_6hr.SEO", "260521 a 2", "6hr", key="k1", score=70, status="manual"),
+    ]
+    conds = {"k1": {"_source_row_number": 5, "sample": "a", "date": "260521"}}
+    clusters = ts.build_time_series_clusters(ms, conds)
+    assert len(clusters) == 2
+    assert all(c.match_status == "manual" for c in clusters)
 
 
 def test_report_uses_clusters(tmp_path):

@@ -235,6 +235,12 @@ def test_render_checklist_html_includes_conflict_clusters_as_decisions():
     html = checklist_view.render_checklist_html(payloads)
     assert 'data-cluster="TS001"' in html      # conflict cluster gets a decision control
     assert "행 5" in html
+    assert "검토 ID TS001" in html             # TS is labeled as an internal review id, not a file name
+    assert "실제 EIS 파일 2개" in html
+    assert "260603/pure 5t_1_0hr.SEO" in html
+    assert "260603/pure 5t_1_24hr.SEO" in html
+    assert "실험일지 Excel 행 후보" in html
+    assert "Excel 5행" in html
 
 
 def test_render_checklist_html_has_inputs_and_candidates():
@@ -284,6 +290,32 @@ def test_apply_checklist_answers_roundtrip(tmp_path):
     assert "260430/dunno.SEO" not in saved and "260430/bad.SEO" not in saved
 
 
+def test_apply_checklist_answers_uses_numeric_skip_memo_as_journal_row(tmp_path):
+    import json as _json
+
+    csv = tmp_path / "cond.csv"
+    csv.write_text(
+        "sample,참고,전해질,종류,Binder,Voltage range\n"
+        "row two,12파이_Cu foil,1.0M LiPF6 EC/DEC 1:1,LIB,2wt% cmc,0.01~2V\n"
+        "row three,12파이_Cu foil,1.0M LiPF6 EC/DEC 1:1,LIB,2wt% cmc,0.01~2V\n",
+        encoding="utf-8",
+    )
+    ov = tmp_path / "ov.json"
+    answers = {"version": 1, "answers": {
+        "TS099": {
+            "choice": "__skip__",
+            "memo": "3",
+            "members": ["260603/sample_0hr.SDE", "260603/sample_24hr.SDE"],
+        },
+    }}
+    res = matching_service.apply_checklist_answers(answers, csv, ov)
+    assert res["applied"] == 2
+    saved = _json.loads(ov.read_text(encoding="utf-8"))
+    assert saved["260603/sample_0hr.SDE"]["journal_row"] == 3
+    assert saved["260603/sample_0hr.SDE"]["sample"] == "row three"
+    assert saved["260603/sample_0hr.SDE"]["selection_source"] == "checklist_memo_row"
+
+
 def test_render_verification_html_shows_time_series_clusters():
     from battery_lab import verification_view
     payloads = {"eis": {"kind": "eis",
@@ -329,6 +361,10 @@ def test_render_checklist_html_offers_cluster_candidates():
     assert "TS002" in html
     assert 'data-cluster="TS002"' in html
     assert "행 300" in html
+    assert "실제 EIS 파일 2개" in html
+    assert "260603/pure 5t_1_0hr.SEO" in html
+    assert "260603/pure 5t_1_9hr.SEO" in html
+    assert "Excel 300행" in html
     assert "__delete__" in html
 
 

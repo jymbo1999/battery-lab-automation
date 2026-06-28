@@ -14,11 +14,12 @@ _STATUS_LABEL = {
     "verified": ("확정", "ok"),
     "manual": ("수동확정", "info"),
     "review": ("검토", "warn"),
+    "conflict": ("충돌", "bad"),
     "ambiguous": ("모호", "warn"),
     "blocked": ("충돌", "bad"),
     "unmatched": ("미매칭", "muted"),
 }
-_RISKY = {"review", "ambiguous", "blocked", "unmatched"}
+_RISKY = {"review", "conflict", "ambiguous", "blocked", "unmatched"}
 
 
 def _badge(status: str) -> str:
@@ -35,7 +36,9 @@ def _summary_bar(s: dict[str, Any]) -> str:
         ("미매칭", s.get("unmatched_files", 0)),
         ("고아행", s.get("orphan_rows", 0)),
         ("중복그룹", s.get("duplicate_groups", 0)),
-        ("시계열 클러스터", s.get("time_series_clusters", 0)),
+        ("시계열 전체", s.get("time_series_clusters", 0)),
+        ("시계열 확정", s.get("time_series_verified", 0)),
+        ("시계열 확인필요", s.get("time_series_needs_review", 0)),
     ]
     inner = "".join(f'<div class="stat"><b>{escape(str(v))}</b><span>{escape(label)}</span></div>' for label, v in cells)
     return f'<div class="stats">{inner}</div>'
@@ -130,15 +133,18 @@ def _cluster_table(clusters: list[dict[str, Any]]) -> str:
 def _kind_block(kind: str, payload: dict[str, Any]) -> str:
     title = {"eis": "EIS", "capacity": "Capacity"}.get(kind, kind)
     deferred = payload.get("deferred_rows", [])
+    summary = payload.get("summary", {})
+    cluster_needs_review = summary.get("time_series_needs_review", 0)
+    cluster_verified = summary.get("time_series_verified", 0)
     deferred_html = (
-        f'<div class="section"><h3>시계열 클러스터 — {len(deferred)}개</h3>'
+        f'<div class="section"><h3>시계열 클러스터 — 전체 {len(deferred)}개 · 확정 {cluster_verified}개 · 확인필요 {cluster_needs_review}개</h3>'
         f'{_cluster_table(deferred)}</div>'
         if deferred
         else ""
     )
     return (
         f'<section class="kind"><h2>{escape(title)}</h2>'
-        f'{_summary_bar(payload.get("summary", {}))}'
+        f'{_summary_bar(summary)}'
         f'{_rows_table(payload.get("rows", []))}'
         f'{deferred_html}'
         f'{_orphans(payload.get("orphans", []))}'

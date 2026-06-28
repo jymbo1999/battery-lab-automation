@@ -42,6 +42,8 @@ CONDITION_FIELDS = [
 ]
 
 REQUIRED_COMPARISON_FIELDS = ("electrolyte", "binder", "voltage_range", "ratio")
+CAPACITY_COMPARISON_FIELDS = ("cell_type", *REQUIRED_COMPARISON_FIELDS)
+EXCLUDED_COMPARISON_NAME_RE = re.compile(r"(?i)(?:^|[^a-z0-9])(cv|gitt)(?:[^a-z0-9]|$)")
 CELL_LEVEL_ANALYSES = {ANALYSIS_CAPACITY, ANALYSIS_VOLTAGE, ANALYSIS_EIS}
 ELECTRODE_LEVEL_ANALYSES = {ANALYSIS_SHEET}
 MATERIAL_LEVEL_ANALYSES = {ANALYSIS_RAMAN, ANALYSIS_TGA}
@@ -233,7 +235,11 @@ def build_comparison_candidates(
     conditions: dict[str, dict[str, Any]],
 ) -> list[ComparisonCandidate]:
     matched = {cell_id: find_condition(cell_id, conditions) for cell_id in sorted(set(cell_ids))}
-    available = [cell_id for cell_id, condition in matched.items() if condition]
+    available = [
+        cell_id
+        for cell_id, condition in matched.items()
+        if condition and not is_excluded_comparison_condition(cell_id, condition)
+    ]
     candidates = []
     for left_id, right_id in itertools.combinations(available, 2):
         candidates.append(compare_candidate(left_id, right_id, matched[left_id] or {}, matched[right_id] or {}))
@@ -251,6 +257,11 @@ def build_analysis_comparison_validations(
     validations: list[AnalysisComparisonValidation] = []
     for analysis_type, typed_records in sorted(by_type.items()):
         latest_by_cell = latest_records_by_cell(typed_records)
+        latest_by_cell = {
+            cell_id: record
+            for cell_id, record in latest_by_cell.items()
+            if not is_excluded_comparison_condition(cell_id, find_condition(cell_id, conditions))
+        }
         condition_candidates = {
             frozenset((candidate.cell_id_a, candidate.cell_id_b)): candidate
             for candidate in build_comparison_candidates(list(latest_by_cell), conditions)
@@ -326,10 +337,10 @@ def cycle_sort_key(value: str) -> tuple[int, str]:
 
 
 def compare_candidate(left_id: str, right_id: str, left: dict[str, Any], right: dict[str, Any]) -> ComparisonCandidate:
-    matches = {field: clean(left.get(field)) == clean(right.get(field)) and bool(clean(left.get(field))) for field in REQUIRED_COMPARISON_FIELDS}
+    matches = {field: clean(left.get(field)) == clean(right.get(field)) and bool(clean(left.get(field))) for field in CAPACITY_COMPARISON_FIELDS}
     missing_fields = [
         field
-        for field in REQUIRED_COMPARISON_FIELDS
+        for field in CAPACITY_COMPARISON_FIELDS
         if not clean(left.get(field)) or not clean(right.get(field))
     ]
     mismatches = [field for field, matched in matches.items() if not matched and field not in missing_fields]
@@ -355,6 +366,7 @@ def compare_candidate(left_id: str, right_id: str, left: dict[str, Any], right: 
     return ComparisonCandidate(
         cell_id_a=left_id,
         cell_id_b=right_id,
+        same_cell_type=matches["cell_type"],
         same_electrolyte=matches["electrolyte"],
         same_binder=matches["binder"],
         same_voltage_range=matches["voltage_range"],
@@ -376,6 +388,17 @@ def candidate_note(candidate: ComparisonCandidate) -> str:
         f"grade {candidate.comparison_grade} - {candidate.reason} "
         f"(Areal mass density 차이: {diff})"
     )
+
+
+def is_excluded_comparison_condition(cell_id: str, condition: dict[str, Any]) -> bool:
+    values = [
+        cell_id,
+        condition.get("cell_id"),
+        condition.get("sample"),
+        condition.get("raw_sample_name"),
+        condition.get("display_label"),
+    ]
+    return any(EXCLUDED_COMPARISON_NAME_RE.search(str(value or "")) for value in values)
 
 
 def find_condition(cell_id: str, conditions: dict[str, dict[str, Any]]) -> dict[str, Any]:

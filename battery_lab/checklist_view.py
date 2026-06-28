@@ -64,16 +64,21 @@ def _confirmed_list(rows: list[dict[str, Any]]) -> str:
     )
 
 
-def _cluster_candidate_options(cluster: dict[str, Any]) -> str:
-    """Build <option> elements from a cluster's candidate_options (JSON string or list)."""
+def _cluster_candidates(cluster: dict[str, Any]) -> list[dict[str, Any]]:
     raw = cluster.get("candidate_options") or "[]"
     if isinstance(raw, str):
         try:
-            candidates = _json.loads(raw)
+            parsed = _json.loads(raw)
         except Exception:
-            candidates = []
+            parsed = []
     else:
-        candidates = list(raw)
+        parsed = list(raw)
+    return parsed if isinstance(parsed, list) else []
+
+
+def _cluster_candidate_options(cluster: dict[str, Any]) -> str:
+    """Build <option> elements from a cluster's candidate_options (JSON string or list)."""
+    candidates = _cluster_candidates(cluster)
     opts = ['<option value="">— 선택 —</option>']
     for idx, c in enumerate(candidates):
         ck = escape(str(c.get("condition_key", "")))
@@ -90,9 +95,43 @@ def _cluster_candidate_options(cluster: dict[str, Any]) -> str:
     return "".join(opts)
 
 
+def _cluster_member_list(member_paths: str) -> str:
+    paths = [p for p in str(member_paths or "").split(";") if p]
+    if not paths:
+        return ""
+    items = "".join(f"<li>{escape(path)}</li>" for path in paths)
+    return (
+        f'<details class="cluster-detail" open>'
+        f'<summary>실제 EIS 파일 {len(paths)}개</summary>'
+        f'<ol class="member-list">{items}</ol>'
+        f'</details>'
+    )
+
+
+def _cluster_candidate_list(candidates: list[dict[str, Any]]) -> str:
+    if not candidates:
+        return '<div class="candidate-note">실험일지 Excel 행 후보를 찾지 못했습니다.</div>'
+    items = []
+    for idx, c in enumerate(candidates):
+        row = escape(str(c.get("journal_row", "")))
+        sample = escape(str(c.get("sample", "")))
+        date = escape(str(c.get("date", "")))
+        score = escape(str(c.get("score", "")))
+        delta = c.get("date_delta_days")
+        delta_txt = f"±{escape(str(delta))}일" if delta is not None else "날짜차 ?"
+        rec = " · 코드 추천" if idx == 0 else ""
+        items.append(f"<li><b>Excel {row}행</b> · {sample} · {date} ({delta_txt}, {score}점{rec})</li>")
+    return (
+        '<div class="candidate-note"><b>실험일지 Excel 행 후보</b></div>'
+        f'<ol class="candidate-list">{"".join(items)}</ol>'
+    )
+
+
 def _cluster_decision_card(cluster: dict[str, Any]) -> str:
     cid = escape(str(cluster.get("cluster_id", "")))
-    members = escape(str(cluster.get("member_paths", "")))
+    raw_members = str(cluster.get("member_paths", ""))
+    members = escape(raw_members)
+    candidates = _cluster_candidates(cluster)
     has_zero = cluster.get("has_zero", False)
     has_24 = cluster.get("has_24", False)
     endpoint_txt = ("✅" if has_zero else "✗") + "0hr " + ("✅" if has_24 else "✗") + "24hr"
@@ -101,7 +140,7 @@ def _cluster_decision_card(cluster: dict[str, Any]) -> str:
     return (
         f'<div class="card">'
         f'<div class="chead">'
-        f'<span class="fname">{cid}</span>'
+        f'<span class="fname">검토 ID {cid}</span>'
         f'<span class="fdate">폴더 {escape(str(cluster.get("folder_date", "")))}</span>'
         f'<span class="fdate">시점: {escape(str(cluster.get("time_points", "")))} · 파일 {escape(str(cluster.get("file_count", "")))}개</span>'
         f'<span class="fdate">{endpoint_txt}</span>'
@@ -109,9 +148,12 @@ def _cluster_decision_card(cluster: dict[str, Any]) -> str:
         f'<span class="badge warn">{escape(str(cluster.get("match_status", "")))}</span>'
         f'</div>'
         f'<div class="why">{escape(str(cluster.get("reason", "")))}</div>'
+        f'{_cluster_member_list(raw_members)}'
+        f'{_cluster_candidate_list(candidates)}'
         f'<div class="pick"><label>올바른 실험일지 행:</label>'
         f'<select class="ans" data-cluster="{cid}" data-members="{members}">'
         f'{_cluster_candidate_options(cluster)}</select>'
+        f'<input class="memo" data-cluster="{cid}" placeholder="메모 (선택)">'
         f'</div>'
         f'</div>'
     )
@@ -206,6 +248,12 @@ _SHELL = """<!doctype html>
   .pick label { color: #44506a; font-size: 12.5px; }
   select.ans { padding: 6px 8px; border: 1px solid #c3ccd8; border-radius: 7px; min-width: 320px; max-width: 100%; font-size: 13px; }
   input.memo { padding: 6px 8px; border: 1px solid #d7dde6; border-radius: 7px; min-width: 160px; }
+  .cluster-detail { border: 1px solid #edf0f4; background: #fafbfc; border-radius: 7px; padding: 7px 10px; margin: 8px 0; }
+  .cluster-detail summary { cursor: pointer; font-weight: 700; color: #36465f; font-size: 12.5px; }
+  .member-list, .candidate-list { margin: 7px 0 0; padding-left: 20px; }
+  .member-list li, .candidate-list li { margin: 3px 0; overflow-wrap: anywhere; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; line-height: 1.35; }
+  .candidate-note { margin: 8px 0 0; color: #36465f; font-size: 12.5px; }
+  .candidate-list li { font-family: inherit; }
   .badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; background: #fdf0d8; color: #b9760a; }
   details.fold { background: #fff; border: 1px solid #e7eaef; border-radius: 8px; padding: 8px 12px; margin-top: 10px; }
   details.fold summary { cursor: pointer; font-weight: 600; color: #44506a; }

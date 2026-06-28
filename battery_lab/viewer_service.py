@@ -6,11 +6,12 @@ from html import escape
 from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from .capacity_matching import CAPACITY_PROTOCOL_CLUSTER_IDS, CAPACITY_PROTOCOL_LABELS, CAPACITY_PROTOCOL_ORDER, build_capacity_match_report
-from .conditions import read_conditions
-from .eis_matching import EIS_SUFFIXES, build_eis_match_report
+from .conditions import CAPACITY_COMPARISON_FIELDS, clean, read_conditions
+from .eis_matching import EIS_SUFFIXES, build_eis_match_report, compact_date
 from .file_io import parse_file
 from .metrics import to_float
 from .plots import eis_fit_svg
@@ -42,35 +43,37 @@ def eis_viewer_options(eis_root: Path, capacity_root: Path, condition_workbook: 
     with streamlit_roots(eis_root, capacity_root):
         source_paths, conditions, report = build_eis_viewer_report(eis_root, condition_workbook, override_path)
         source_options = path_options(source_paths, eis_root)
+        time_series_groups = sorted(
+            [group for group in report.time_series_groups if group.file_count >= 2],
+            key=lambda group: date_sort_key(group.folder_date),
+        )
+        comparison_clusters = sorted(
+            list(report.comparison_clusters),
+            key=lambda cluster: date_sort_key(eis_cluster_date(cluster.source_paths)),
+        )
         time_series_options = [
             {
                 "value": group.cluster_id,
-                "label": f"{group.cluster_id} · {group.condition_sample or group.cluster_signature} · {group.file_count} files",
+                "label": eis_time_series_option_label(group, conditions),
                 "file_count": group.file_count,
                 "source_paths": group.member_paths,
             }
-            for group in report.time_series_groups
-            if group.file_count >= 2
+            for group in time_series_groups
         ]
         comparison_options = [
             {
                 "value": cluster.cluster_id,
-                "label": (
-                    f"{cluster.cluster_id} · {cluster.condition_count} conditions · "
-                    f"loading {format_optional(cluster.loading_min)}-{format_optional(cluster.loading_max)}"
-                ),
+                "label": eis_comparison_option_label(cluster, conditions),
                 "file_count": cluster.file_count,
                 "source_paths": cluster.source_paths,
             }
-            for cluster in report.comparison_clusters
-            if cluster.file_count >= 2
+            for cluster in comparison_clusters
         ]
         if source_options:
-            comparison_options.insert(
-                min(3, len(comparison_options)),
+            comparison_options.append(
                 {
                     "value": "C999",
-                    "label": f"C999 · all EIS datasets · {len(source_options)} files",
+                    "label": f"{'all dates':<9} · {'all EIS data':<14} · {'all':<3} · {'all':<9} · {'all':<5} · {len(source_options):>3} files",
                     "file_count": len(source_options),
                     "source_paths": ";".join(option["value"] for option in source_options),
                 },
@@ -86,6 +89,8 @@ def eis_viewer_options(eis_root: Path, capacity_root: Path, condition_workbook: 
             "comparison_options": comparison_options,
             "time_series_groups": [asdict(row) for row in report.time_series_groups[:200]],
             "comparison_clusters": [asdict(row) for row in report.comparison_clusters[:200]],
+            "time_series_rows": eis_time_series_rows(time_series_groups, conditions),
+            "comparison_rows": eis_comparison_rows(comparison_clusters, conditions, len(source_options)),
             "comparison_pairs": [asdict(row) for row in report.comparison_pairs[:200]],
         }
 
@@ -124,27 +129,33 @@ def eis_overlay_payload(
             rel_paths = [key] if key else all_rel_paths[:1]
             title = f"{Path(rel_paths[0]).stem} Nyquist" if rel_paths else "EIS Nyquist"
         elif mode == "time_series":
-            groups = [group for group in report.time_series_groups if group.file_count >= 2]
+            groups = sorted(
+                [group for group in report.time_series_groups if group.file_count >= 2],
+                key=lambda group: date_sort_key(group.folder_date),
+            )
             group = next((item for item in groups if item.cluster_id == key), groups[0] if groups else None)
             rel_paths = [item for item in group.member_paths.split(";") if item] if group else []
-            title = f"{group.condition_sample or group.cluster_signature} time-series Nyquist" if group else "EIS time-series Nyquist"
+            title = eis_time_series_title(group, conditions) if group else "EIS time-series Nyquist"
             color_mode = "time_series"
         else:
-            clusters = [cluster for cluster in report.comparison_clusters if cluster.file_count >= 2]
+            clusters = sorted(
+                list(report.comparison_clusters),
+                key=lambda cluster: date_sort_key(eis_cluster_date(cluster.source_paths)),
+            )
             if key == "C999" or (not key and all_rel_paths):
                 rel_paths = all_rel_paths
-                title = "C999 all EIS datasets Nyquist"
+                title = "all dates · all EIS data · Nyquist"
                 performance_mode = True
             else:
                 cluster = next((item for item in clusters if item.cluster_id == key), clusters[0] if clusters else None)
                 rel_paths = [item for item in cluster.source_paths.split(";") if item] if cluster else all_rel_paths
-                title = f"{cluster.cluster_id} comparison Nyquist" if cluster else "EIS comparison Nyquist"
+                title = eis_comparison_title(cluster, conditions) if cluster else "EIS comparison Nyquist"
 
         if not rel_paths:
             return {"available": False, "html": "", "errors": ["표시할 EIS source가 없습니다."], "title": title}
 
         member_paths = [eis_root / rel for rel in rel_paths]
-        flags = {"show_fit": bool(show_fit)}
+        flags = {"show_fit": bool(show_fit), "label_layout": "dated_standard_v2"}
         ctx = render_cache.context_hash(condition_workbook, override_path)
         msig = render_cache.membersig(member_paths, eis_root)
         cache_id = key or f"{mode}:all"
@@ -184,24 +195,28 @@ def capacity_viewer_options(capacity_root: Path, eis_root: Path, condition_workb
         source_options = path_options(source_paths, capacity_root)
         summary_options = path_options(summary_paths, capacity_root)
         rel_paths = [option["value"] for option in summary_options]
-        groups = streamlit_ui.capacity_protocol_path_groups(rel_paths)
-        cluster_options = []
+        groups = capacity_comparison_path_groups(rel_paths, report, conditions)
+        cluster_options = [
+            {
+                "value": group["value"],
+                "label": group["label"],
+                "file_count": len(group["paths"]),
+                "protocol_type": group["protocol_type"],
+            }
+            for group in groups
+        ]
         for protocol_type in CAPACITY_PROTOCOL_ORDER:
-            paths = groups.get(protocol_type, [])
-            if not paths:
-                continue
-            cluster_options.append(
-                {
-                    "value": protocol_type,
-                    "label": f"{CAPACITY_PROTOCOL_CLUSTER_IDS[protocol_type]} · {CAPACITY_PROTOCOL_LABELS[protocol_type]} · {len(paths)} files",
-                    "file_count": len(paths),
-                }
-            )
-        if rel_paths:
-            cluster_options.insert(
-                min(3, len(cluster_options)),
-                {"value": "P999", "label": f"P999 · all Capacity datasets · {len(rel_paths)} files", "file_count": len(rel_paths)},
-            )
+            protocol_paths = [path for group in groups if group["protocol_type"] == protocol_type for path in group["paths"]]
+            if protocol_paths:
+                protocol_label = capacity_protocol_label(protocol_type)
+                cluster_options.append(
+                    {
+                        "value": f"{protocol_type}|P999",
+                        "label": f"{'all dates':<9} · {protocol_label:<14} · {'all':<3} · {'all':<9} · {'all':<5} · {len(protocol_paths):>3} files",
+                        "file_count": len(protocol_paths),
+                        "protocol_type": protocol_type,
+                    },
+                )
         return {
             "available": True,
             "source_count": len(source_paths),
@@ -211,7 +226,7 @@ def capacity_viewer_options(capacity_root: Path, eis_root: Path, condition_workb
             "source_options": source_options,
             "summary_options": summary_options,
             "cluster_options": cluster_options,
-            "cluster_rows": streamlit_ui.capacity_protocol_path_cluster_rows(groups, len(rel_paths)),
+            "cluster_rows": capacity_comparison_cluster_rows(groups, len(rel_paths)),
         }
 
 
@@ -283,21 +298,24 @@ def capacity_overlay_payload(
             selected_paths = [key] if key else rel_paths[:1]
             title = f"{Path(selected_paths[0]).stem} Capacity" if selected_paths else title
         else:
-            groups = streamlit_ui.capacity_protocol_path_groups(rel_paths)
-            if key == "P999" or (not key and rel_paths):
-                selected_paths = rel_paths
-                title = "P999 all Capacity datasets"
+            groups = capacity_comparison_path_groups(rel_paths, report, conditions)
+            if mode in CAPACITY_PROTOCOL_ORDER:
+                groups = [group for group in groups if group["protocol_type"] == mode]
+            protocol_label = capacity_protocol_label(mode) if mode in CAPACITY_PROTOCOL_ORDER else "all protocols"
+            if key == "P999" or key == f"{mode}|P999" or (not key and groups):
+                selected_paths = [path for group in groups for path in group["paths"]]
+                title = f"all dates · {protocol_label} · Capacity datasets"
                 performance_mode = True
             else:
-                protocol_type = key if key in groups else next((item for item in CAPACITY_PROTOCOL_ORDER if groups.get(item)), "")
-                selected_paths = groups.get(protocol_type, [])
-                title = f"{CAPACITY_PROTOCOL_CLUSTER_IDS.get(protocol_type, '')} {CAPACITY_PROTOCOL_LABELS.get(protocol_type, '')}".strip()
+                selected_group = next((group for group in groups if group["value"] == key), None) or (groups[0] if groups else None)
+                selected_paths = selected_group["paths"] if selected_group else []
+                title = selected_group["title"] if selected_group else title
 
         if not selected_paths:
             return {"available": False, "html": "", "errors": ["표시할 Capacity summary source가 없습니다."], "title": title}
 
         member_paths = [capacity_root / rel for rel in selected_paths]
-        flags: dict = {}
+        flags: dict = {"table_layout": "protocol_kpi_columns_v5", "cluster_layout": "journal_date_bucket_v4", "label_layout": "charge_mean_center_y_v5"}
         ctx = render_cache.context_hash(condition_workbook, override_path)
         msig = render_cache.membersig(member_paths, capacity_root)
         cache_id = key or f"{mode}:all"
@@ -310,6 +328,398 @@ def capacity_overlay_payload(
         payload = {"available": bool(html_doc), "html": html_doc, "errors": errors, "title": title, "series_count": len(series)}
         render_cache.cluster_cache_put("capacity", mode, cache_id, msig, ctx, flags, payload)
         return payload
+
+
+def draft_overlay_payload(
+    draft_root: Path,
+    rel_paths: list[str],
+    *,
+    kind: str,
+    color_mode: str = "comparison",
+    title: str = "",
+) -> dict[str, Any]:
+    """Render uncommitted draft files through the live-viewer overlay pipeline.
+
+    Uses the same ``load_*_overlay_series`` + ``*_overlay_html`` functions the EIS/Capacity
+    live viewers use, so the wizard preview matches the live viewer (scaling, fit circle,
+    KPI table) instead of the legacy dashboard plot. Paths resolve against ``draft_root``
+    (both EIS_ROOT and CAPACITY_ROOT are pointed there), and an empty match report is used
+    since draft files are not yet matched to a journal condition.
+    """
+    if not rel_paths:
+        return {"available": False, "html": "", "errors": ["선택된 파일이 없습니다."], "title": title, "series_count": 0}
+    report = SimpleNamespace(matches=[])
+    with streamlit_roots(draft_root, draft_root):
+        if kind == "capacity":
+            series, errors = streamlit_ui.load_capacity_overlay_series(rel_paths, report, {})
+            html_doc = streamlit_ui.capacity_overlay_html(title or "Capacity preview", series)
+        else:
+            show_fit = color_mode != "time_series"
+            series, errors = streamlit_ui.load_eis_overlay_series(rel_paths, report, {}, color_mode=color_mode)
+            if show_fit:
+                for item in series:
+                    item["label"] = streamlit_ui.overlay_fit_label(item)
+            html_doc = streamlit_ui.eis_overlay_html(title or "EIS preview", series, color_mode=color_mode, show_fit=show_fit)
+    return {
+        "available": bool(html_doc and series),
+        "html": html_doc,
+        "errors": errors,
+        "title": title,
+        "series_count": len(series),
+    }
+
+
+def capacity_comparison_path_groups(
+    rel_paths: list[str],
+    report: Any,
+    conditions: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    protocol_groups = streamlit_ui.capacity_protocol_path_groups(rel_paths)
+    matches = {match.relative_path: match for match in getattr(report, "matches", [])}
+    conditions_by_row = streamlit_ui.conditions_by_source_row(conditions)
+    groups: list[dict[str, Any]] = []
+    for protocol_type in CAPACITY_PROTOCOL_ORDER:
+        buckets: dict[tuple[str, ...], list[str]] = {}
+        for rel_path in protocol_groups.get(protocol_type, []):
+            match = matches.get(rel_path)
+            condition = conditions.get(match.condition_key, {}) if match and match.condition_key else {}
+            key = capacity_comparison_key(condition)
+            buckets.setdefault(key, []).append(rel_path)
+        for idx, (condition_key, paths) in enumerate(
+            sorted(buckets.items(), key=lambda item: (capacity_date_range_sort_key(capacity_paths_journal_date_label(item[1], matches, conditions_by_row)), item[0])),
+            start=1,
+        ):
+            date = capacity_paths_journal_date_label(paths, matches, conditions_by_row)
+            values = capacity_comparison_values(condition_key)
+            protocol_label = capacity_protocol_label(protocol_type)
+            details = capacity_comparison_details(values)
+            title = capacity_cluster_title(date, protocol_label, values, len(paths))
+            groups.append(
+                {
+                    "value": f"{protocol_type}|{date}|{idx:02d}",
+                    "date": date,
+                    "protocol_type": protocol_type,
+                    "protocol_label": protocol_label,
+                    "condition_key": condition_key,
+                    "condition_label": details,
+                    "cell_type": values.get("cell_type", "unknown"),
+                    "voltage_range": values.get("voltage_range", "unknown"),
+                    "ratio": values.get("ratio", "unknown"),
+                    "title": title,
+                    "label": capacity_cluster_option_label(date, protocol_label, values, len(paths)),
+                    "paths": paths,
+                }
+            )
+    protocol_order = {protocol_type: idx for idx, protocol_type in enumerate(CAPACITY_PROTOCOL_ORDER)}
+    return sorted(
+        groups,
+        key=lambda group: (
+            capacity_date_range_sort_key(group["date"]),
+            protocol_order.get(group["protocol_type"], 999),
+            group["cell_type"],
+            group["voltage_range"],
+            group["ratio"],
+        ),
+    )
+
+
+def capacity_cluster_date(rel_path: str) -> str:
+    for part in Path(rel_path).parts:
+        if len(part) == 6 and part.isdigit():
+            return part
+    return "unknown"
+
+
+def capacity_paths_date_label(paths: list[str]) -> str:
+    dates = sorted({capacity_cluster_date(path) for path in paths if capacity_cluster_date(path) != "unknown"})
+    if not dates:
+        return "unknown"
+    if len(dates) == 1:
+        return dates[0]
+    return f"{dates[0]}-{dates[-1]}"
+
+
+def capacity_paths_journal_date_label(
+    paths: list[str],
+    matches: dict[str, Any],
+    conditions_by_row: dict[int, dict[str, Any]],
+) -> str:
+    """클러스터 날짜 라벨을 실험일지 기준(파일명 행번호 → 원본 조건표 행 date)으로 만든다.
+
+    조건표 date가 6자리(YYMMDD)로 정규화되면 그 값을, 정규화 불가/누락이면
+    파일 경로의 폴더 날짜로 안전하게 fallback 한다(정렬/범위 표기 호환 유지).
+    """
+    tokens: set[str] = set()
+    for path in paths:
+        match = matches.get(path)
+        row_prefix = getattr(match, "row_prefix", None) if match else None
+        raw = streamlit_ui.journal_date_by_row(conditions_by_row, row_prefix, fallback="")
+        token = compact_date(raw) or capacity_cluster_date(path)
+        if token and token != "unknown":
+            tokens.add(token)
+    if not tokens:
+        return "unknown"
+    ordered = sorted(tokens)
+    return ordered[0] if len(ordered) == 1 else f"{ordered[0]}-{ordered[-1]}"
+
+
+def capacity_date_range_sort_key(date_label: str) -> tuple[int, int]:
+    dates = [part for part in str(date_label or "").split("-") if len(part) == 6 and part.isdigit()]
+    if dates:
+        return (0, -int(dates[-1]))
+    return (1, 0)
+
+
+def capacity_comparison_key(condition: dict[str, Any]) -> tuple[str, ...]:
+    values = []
+    for field in CAPACITY_COMPARISON_FIELDS:
+        value = clean(condition.get(field)) or "unknown"
+        if field == "ratio":
+            value = capacity_ratio_bucket(value)
+        values.append(value)
+    return tuple(values)
+
+
+def capacity_ratio_bucket(value: str) -> str:
+    number = to_float(value)
+    if number is None:
+        return value
+    bucket = round(number / 0.05) * 0.05
+    text = f"{bucket:.2f}".rstrip("0").rstrip(".")
+    return text or "0"
+
+
+def capacity_comparison_values(key: tuple[str, ...]) -> dict[str, str]:
+    return dict(zip(CAPACITY_COMPARISON_FIELDS, key))
+
+
+def capacity_protocol_label(protocol_type: str) -> str:
+    label = CAPACITY_PROTOCOL_LABELS.get(protocol_type, protocol_type)
+    return label.split("·", 1)[-1].strip()
+
+
+def capacity_comparison_details(values: dict[str, str]) -> str:
+    return " · ".join(
+        [
+            f"type {values.get('cell_type', 'unknown')}",
+            f"electrolyte {values.get('electrolyte', 'unknown')}",
+            f"binder {values.get('binder', 'unknown')}",
+            f"voltage {values.get('voltage_range', 'unknown')}",
+            f"ratio {values.get('ratio', 'unknown')}",
+        ]
+    )
+
+
+def capacity_cluster_title(date: str, protocol_label: str, values: dict[str, str], file_count: int) -> str:
+    return " · ".join(
+        [
+            date,
+            protocol_label,
+            values.get("cell_type", "unknown"),
+            values.get("binder", "unknown"),
+            values.get("voltage_range", "unknown"),
+            f"r{values.get('ratio', 'unknown')}",
+            f"{file_count} files",
+        ]
+    )
+
+
+def capacity_cluster_option_label(date: str, protocol_label: str, values: dict[str, str], file_count: int) -> str:
+    return (
+        f"{date:<9} · "
+        f"{protocol_label:<14} · "
+        f"{values.get('cell_type', 'unknown'):<3} · "
+        f"{short_condition_text(values.get('binder', 'unknown'), 16):<16} · "
+        f"{values.get('voltage_range', 'unknown'):<9} · "
+        f"r{values.get('ratio', 'unknown'):<5} · "
+        f"{file_count:>3} files"
+    )
+
+
+def short_condition_text(value: str, max_len: int) -> str:
+    text = str(value or "unknown")
+    return text if len(text) <= max_len else text[: max_len - 1] + "…"
+
+
+def capacity_comparison_cluster_rows(groups: list[dict[str, Any]], total_count: int) -> list[dict[str, Any]]:
+    rows = [
+        {
+            "Date": group["date"],
+            "Protocol": group["protocol_label"],
+            "protocol_type": group["protocol_type"],
+            "Cell type": group["cell_type"],
+            "Voltage": group["voltage_range"],
+            "Ratio": group["ratio"],
+            "Files": len(group["paths"]),
+            "Details": group["condition_label"],
+        }
+        for group in groups
+    ]
+    protocol_types = [protocol_type for protocol_type in CAPACITY_PROTOCOL_ORDER if any(group["protocol_type"] == protocol_type for group in groups)]
+    if not protocol_types and total_count:
+        protocol_types = [CAPACITY_PROTOCOL_ORDER[0]]
+    for protocol_type in protocol_types:
+        protocol_count = sum(len(group["paths"]) for group in groups if group["protocol_type"] == protocol_type)
+        rows.append(
+            {
+                "Date": "all",
+                "Protocol": capacity_protocol_label(protocol_type),
+                "protocol_type": protocol_type,
+                "Cell type": "all",
+                "Voltage": "all",
+                "Ratio": "all",
+                "Files": protocol_count or total_count,
+                "Details": "전체 overlay",
+            }
+        )
+    return rows
+
+
+def date_sort_key(date: Any) -> tuple[int, int]:
+    text = str(date or "")
+    compact = text[:6]
+    if len(compact) == 6 and compact.isdigit():
+        return (0, -int(compact))
+    return (1, 0)
+
+
+def eis_cluster_date(source_paths: str) -> str:
+    dates = sorted(
+        {
+            capacity_cluster_date(path)
+            for path in str(source_paths or "").split(";")
+            if path
+        }
+    )
+    dates = [date for date in dates if date != "unknown"]
+    if not dates:
+        return "unknown"
+    latest = dates[-1]
+    return f"{latest}+" if len(dates) > 1 else latest
+
+
+def eis_condition_values(condition: dict[str, Any], *, voltage: str = "", ratio: str = "", electrolyte: str = "", binder: str = "") -> dict[str, str]:
+    return {
+        "cell_type": clean(condition.get("cell_type")) or "unknown",
+        "electrolyte": clean(condition.get("electrolyte")) or clean(electrolyte) or "unknown",
+        "binder": clean(condition.get("binder")) or clean(binder) or "unknown",
+        "voltage_range": clean(condition.get("voltage_range")) or clean(voltage) or "unknown",
+        "ratio": clean(condition.get("ratio")) or clean(ratio) or "unknown",
+    }
+
+
+def first_condition_from_keys(condition_keys: str, conditions: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    for key in str(condition_keys or "").split(";"):
+        condition = conditions.get(key)
+        if condition:
+            return condition
+    return {}
+
+
+def eis_comparison_values(cluster: Any, conditions: dict[str, dict[str, Any]]) -> dict[str, str]:
+    condition = first_condition_from_keys(getattr(cluster, "condition_keys", ""), conditions)
+    return eis_condition_values(
+        condition,
+        voltage=getattr(cluster, "voltage_range", ""),
+        ratio=getattr(cluster, "ratio", ""),
+        electrolyte=getattr(cluster, "electrolyte", ""),
+        binder=getattr(cluster, "binder", ""),
+    )
+
+
+def eis_time_series_values(group: Any, conditions: dict[str, dict[str, Any]]) -> dict[str, str]:
+    condition = conditions.get(getattr(group, "condition_key", ""), {})
+    return eis_condition_values(condition)
+
+
+def standard_option_label(date: str, mode_label: str, values: dict[str, str], file_count: int) -> str:
+    return (
+        f"{date:<9} · "
+        f"{mode_label:<14} · "
+        f"{values.get('cell_type', 'unknown'):<3} · "
+        f"{values.get('voltage_range', 'unknown'):<9} · "
+        f"r{values.get('ratio', 'unknown'):<5} · "
+        f"{file_count:>3} files"
+    )
+
+
+def eis_comparison_option_label(cluster: Any, conditions: dict[str, dict[str, Any]]) -> str:
+    mode = "EIS independent" if getattr(cluster, "cluster_role", "") == "independent" else "EIS compare"
+    return standard_option_label(eis_cluster_date(cluster.source_paths), mode, eis_comparison_values(cluster, conditions), cluster.file_count)
+
+
+def eis_time_series_option_label(group: Any, conditions: dict[str, dict[str, Any]]) -> str:
+    return standard_option_label(group.folder_date or "unknown", "EIS time", eis_time_series_values(group, conditions), group.file_count)
+
+
+def eis_comparison_title(cluster: Any, conditions: dict[str, dict[str, Any]]) -> str:
+    values = eis_comparison_values(cluster, conditions)
+    mode = "EIS independent" if getattr(cluster, "cluster_role", "") == "independent" else "EIS compare"
+    return f"{eis_cluster_date(cluster.source_paths)} · {mode} · {values['cell_type']} · {values['voltage_range']} · r{values['ratio']} · Nyquist"
+
+
+def eis_time_series_title(group: Any, conditions: dict[str, dict[str, Any]]) -> str:
+    values = eis_time_series_values(group, conditions)
+    return f"{group.folder_date or 'unknown'} · EIS time · {values['cell_type']} · {values['voltage_range']} · r{values['ratio']} · Nyquist"
+
+
+def eis_details(values: dict[str, str], extra: str = "") -> str:
+    parts = [
+        f"electrolyte {values.get('electrolyte', 'unknown')}",
+        f"binder {values.get('binder', 'unknown')}",
+    ]
+    if extra:
+        parts.append(extra)
+    return " · ".join(parts)
+
+
+def eis_comparison_rows(clusters: list[Any], conditions: dict[str, dict[str, Any]], total_count: int) -> list[dict[str, Any]]:
+    rows = []
+    for cluster in clusters:
+        values = eis_comparison_values(cluster, conditions)
+        mode = "EIS independent" if getattr(cluster, "cluster_role", "") == "independent" else "EIS compare"
+        rows.append(
+            {
+                "Date": eis_cluster_date(cluster.source_paths),
+                "Mode": mode,
+                "Cell type": values["cell_type"],
+                "Voltage": values["voltage_range"],
+                "Ratio": values["ratio"],
+                "Files": cluster.file_count,
+                "Details": eis_details(values, f"loading {format_optional(cluster.loading_min)}-{format_optional(cluster.loading_max)}"),
+            }
+        )
+    rows.append(
+        {
+            "Date": "all",
+            "Mode": "all EIS data",
+            "Cell type": "all",
+            "Voltage": "all",
+            "Ratio": "all",
+            "Files": total_count,
+            "Details": "전체 overlay",
+        }
+    )
+    return rows
+
+
+def eis_time_series_rows(groups: list[Any], conditions: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for group in groups:
+        values = eis_time_series_values(group, conditions)
+        sample = group.condition_sample or group.cluster_signature
+        rows.append(
+            {
+                "Date": group.folder_date or "unknown",
+                "Mode": "EIS time",
+                "Cell type": values["cell_type"],
+                "Voltage": values["voltage_range"],
+                "Ratio": values["ratio"],
+                "Files": group.file_count,
+                "Details": eis_details(values, f"{sample} · {group.time_points}"),
+            }
+        )
+    return rows
 
 
 def eis_source_payload(eis_root: Path, capacity_root: Path, rel_path: str, *, show_fit: bool = False) -> dict[str, Any]:

@@ -54,6 +54,13 @@ class ExcelDashboardTests(unittest.TestCase):
         payload = build_sheet_payload(worksheet, Path("conditions.xlsx"))
 
         self.assertEqual(payload["sheet"], "JYJ")
+        self.assertEqual(payload["sourceMaxRow"], 3)
+        self.assertEqual(payload["extraRows"], 100)
+        self.assertEqual(payload["extraStartRow"], 4)
+        self.assertEqual(payload["maxRow"], 103)
+        self.assertEqual(payload["rows"][-1]["index"], 103)
+        self.assertTrue(payload["rows"][-1]["extra"])
+        self.assertFalse(payload["rows"][-1]["ignored"])
         self.assertGreater(payload["columns"][0]["width"], 100)
         self.assertEqual(payload["rows"][0]["height"], 36)
         self.assertEqual(payload["rows"][0]["cells"][0]["value"], "참고")
@@ -82,6 +89,65 @@ class ExcelDashboardTests(unittest.TestCase):
         self.assertTrue(payload["rows"][2]["ignored"])
         self.assertEqual(payload["filter"]["matchedRows"], 1)
         self.assertEqual(payload["filter"]["ignoredRows"], 1)
+
+    def test_sheet_payload_can_limit_visible_rows_for_fast_initial_view(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "JYJ"
+        worksheet.append(["Sample", "참고", "전해질", "종류", "Binder", "Voltage range"])
+        for row_idx in range(1, 8):
+            worksheet.append([f"matched-{row_idx}", "12파이_Cu foil", "1.0M LiPF6 EC/DEC 1:1", "LIB", "2wt% cmc", "0.01~2V"])
+
+        payload = build_sheet_payload(worksheet, Path("conditions.xlsx"), include_ignored=False, row_limit=3, extra_rows=2)
+
+        self.assertTrue(payload["partialRows"])
+        self.assertEqual(payload["sourceMaxRow"], 8)
+        self.assertEqual(payload["extraRows"], 2)
+        self.assertEqual(payload["extraStartRow"], 9)
+        self.assertEqual([row["index"] for row in payload["rows"]], [1, 6, 7, 8, 9, 10])
+
+    def test_filtered_extra_rows_continue_after_last_visible_row_with_template_style(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "JYJ"
+        worksheet.append(["Sample", "참고", "전해질", "종류", "Binder", "Voltage range"])
+        worksheet.append(["matched-1", "12파이_Cu foil", "1.0M LiPF6 EC/DEC 1:1", "LIB", "2wt% cmc", "0.01~2V"])
+        worksheet.append(["matched-2", "12파이_Cu foil", "1.0M LiPF6 EC/DEC 1:1", "LIB", "2wt% cmc", "0.01~2V"])
+        worksheet.append(["ignored-1", "12파이_Ti foil", "2M ZnSO4", "ZIB", "PVDF", "0.01~2V"])
+        worksheet.append(["ignored-2", "12파이_Ti foil", "2M ZnSO4", "ZIB", "PVDF", "0.01~2V"])
+        worksheet.row_dimensions[3].height = 25
+        worksheet["A3"].fill = PatternFill("solid", fgColor="FFD9EAD3")
+
+        payload = build_sheet_payload(worksheet, Path("conditions.xlsx"), include_ignored=False, extra_rows=2)
+
+        self.assertEqual(payload["sourceMaxRow"], 5)
+        self.assertEqual(payload["extraStartRow"], 4)
+        self.assertEqual(payload["maxRow"], 5)
+        self.assertEqual([row["index"] for row in payload["rows"]], [1, 2, 3, 4, 5])
+        self.assertFalse(payload["rows"][2]["extra"])
+        self.assertTrue(payload["rows"][3]["extra"])
+        self.assertEqual(payload["rows"][3]["height"], 33)
+        self.assertEqual(payload["rows"][3]["cells"][0]["address"], "A4")
+        self.assertEqual(payload["rows"][3]["cells"][0]["value"], "")
+        self.assertEqual(payload["rows"][3]["cells"][0]["style"]["backgroundColor"], "#D9EAD3")
+
+    def test_filtered_extra_rows_recalibrate_after_new_matching_row_is_added(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "JYJ"
+        worksheet.append(["Sample", "참고", "전해질", "종류", "Binder", "Voltage range"])
+        worksheet.append(["matched-1", "12파이_Cu foil", "1.0M LiPF6 EC/DEC 1:1", "LIB", "2wt% cmc", "0.01~2V"])
+        worksheet.append(["ignored", "12파이_Ti foil", "2M ZnSO4", "ZIB", "PVDF", "0.01~2V"])
+        before = build_sheet_payload(worksheet, Path("conditions.xlsx"), include_ignored=False, extra_rows=2)
+
+        worksheet.append(["matched-2", "12파이_Cu foil", "1.0M LiPF6 EC/DEC 1:1", "LIB", "2wt% cmc", "0.01~2V"])
+        after = build_sheet_payload(worksheet, Path("conditions.xlsx"), include_ignored=False, extra_rows=2)
+
+        self.assertEqual(before["extraStartRow"], 3)
+        self.assertEqual([row["index"] for row in before["rows"] if row["extra"]], [3, 4])
+        self.assertEqual(after["extraStartRow"], 5)
+        self.assertEqual([row["index"] for row in after["rows"] if row["extra"]], [5, 6])
+        self.assertFalse([row for row in after["rows"] if row["index"] == 4][0]["extra"])
 
     def test_store_updates_workbook_cell_value(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -139,12 +205,27 @@ class ExcelDashboardTests(unittest.TestCase):
             self.assertEqual(sheet["Z2"].value, "=X2/(Y2/1000)")
             saved.close()
 
-    def test_render_page_contains_editable_grid_hooks(self):
+    def test_render_page_contains_selectable_copy_grid_hooks(self):
         page = render_page()
 
         self.assertIn("/api/sheet", page)
         self.assertIn("/api/cell", page)
-        self.assertIn("contentEditable", page)
+        self.assertIn("contentEditable = 'false'", page)
+        self.assertNotIn("contentEditable = cell.editable ? 'true' : 'false'", page)
+        self.assertIn("selected-cell", page)
+        self.assertIn("selection-anchor", page)
+        self.assertIn("copySelectedCells", page)
+        self.assertIn("selectedCellMatrix", page)
+        self.assertIn("event.clipboardData.setData('text/plain', text)", page)
+        self.assertIn(r"const text = rows.map(row => row.join('\t')).join('\n')", page)
+        self.assertNotIn("row.join('\t')).join('\n", page)
+        self.assertIn("loadingFilteredRows", page)
+        self.assertIn("loadCompleteFilteredRows", page)
+        self.assertIn("if (data.partialRows && options.fastView) loadCompleteFilteredRows()", page)
+        self.assertIn("fetch(sheetUrl(false, false))", page)
+        self.assertIn("if (state.fullDataLoaded || state.filterMode !== 'hide')", page)
+        self.assertIn("Loading all matched rows", page)
+        self.assertIn("selectCells(state.selection.anchorRow, state.selection.anchorColumn, cell.row, cell.column)", page)
         self.assertIn("filterMode", page)
         self.assertIn("실험 일지", page)
         self.assertIn("무시 행 표시안함", page)
@@ -153,7 +234,16 @@ class ExcelDashboardTests(unittest.TestCase):
         self.assertIn("header-row", page)
         self.assertIn("zoomOut", page)
         self.assertIn("zoomIn", page)
+        self.assertIn("zoom: 0.55", page)
+        self.assertIn("<output id=\"zoomValue\">55%</output>", page)
+        self.assertIn("scrollToLatestRows", page)
+        self.assertIn("extraStartRow", page)
+        self.assertIn("visibleExtraRows = 6", page)
+        self.assertIn("tr.dataset.rowIndex = row.index", page)
         self.assertIn("state.zoom", page)
+        self.assertIn("viewportCenterAnchor", page)
+        self.assertIn("contentX: (sheetEl.scrollLeft + viewportX) / oldZoom", page)
+        self.assertIn("setZoom(state.zoom + step, { clientX: event.clientX, clientY: event.clientY })", page)
         self.assertIn("formula-cell", page)
         self.assertIn("dataset.formula", page)
 

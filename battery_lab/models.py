@@ -69,6 +69,7 @@ class AnalysisAvailability:
 class ComparisonCandidate:
     cell_id_a: str
     cell_id_b: str
+    same_cell_type: bool
     same_electrolyte: bool
     same_binder: bool
     same_voltage_range: bool

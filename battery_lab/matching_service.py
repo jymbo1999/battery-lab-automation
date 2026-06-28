@@ -369,6 +369,15 @@ def parse_candidate_options(row: dict[str, Any]) -> list[dict[str, Any]]:
     return options if isinstance(options, list) else []
 
 
+_CHECKLIST_MEMO_ROW_RE = re.compile(r"^\s*(?:excel\s*)?(?:row\s*)?(?:행\s*)?(\d{1,5})\s*(?:행)?\s*$", re.IGNORECASE)
+
+
+def checklist_memo_row_number(memo: str) -> int | None:
+    """Return an Excel row number when a skipped checklist answer uses memo-as-row."""
+    match = _CHECKLIST_MEMO_ROW_RE.match(str(memo or ""))
+    return int(match.group(1)) if match else None
+
+
 def explain_eis_match_status(row: dict[str, Any]) -> str:
     status = str(row.get("status") or "")
     margin = int(row.get("margin") or 0)
@@ -534,7 +543,7 @@ def verification_payload(
 
     status_order = {"unmatched": 0, "ambiguous": 1, "blocked": 2, "review": 3, "manual": 4}
     rows.sort(key=lambda row: (status_order.get(row["status"], 9), str(row["journal_row"])))
-    cluster_order = {"conflict": 0, "ambiguous": 1, "verified": 2}
+    cluster_order = {"conflict": 0, "ambiguous": 1, "verified": 2, "manual": 3}
     deferred_rows.sort(key=lambda c: (cluster_order.get(c["match_status"], 9), c["folder_date"], c["cluster_signature"]))
 
     return {
@@ -553,7 +562,7 @@ def verification_payload(
             "ambiguous_files": len(ambiguous),
             "duplicate_groups": len(duplicates),
             "time_series_clusters": len(deferred_rows),
-            "time_series_verified": sum(1 for c in deferred_rows if c["match_status"] == "verified"),
+            "time_series_verified": sum(1 for c in deferred_rows if c["match_status"] in ("verified", "manual")),
             "time_series_needs_review": sum(1 for c in deferred_rows if c["match_status"] in ("ambiguous", "conflict")),
         },
         "invariant": {
@@ -580,6 +589,7 @@ def apply_checklist_answers(
     """
     data = answers.get("answers", answers) if isinstance(answers, dict) else {}
     conditions = read_conditions(condition_workbook, sheet_name=condition_sheet) if condition_workbook.exists() else {}
+    condition_rows = condition_index_by_row_number(conditions)
     overrides = load_match_overrides(override_path)
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     applied = deleted = skipped = unknown = 0
@@ -587,7 +597,29 @@ def apply_checklist_answers(
         choice = str((ans or {}).get("choice") or "").strip()
         memo = str((ans or {}).get("memo") or "")
         members = (ans or {}).get("members") or None
-        if not choice or choice == "__skip__":
+        if choice == "__skip__":
+            memo_row = checklist_memo_row_number(memo)
+            if memo_row is None:
+                skipped += 1
+                continue
+            choice, condition = condition_rows.get(memo_row, ("", {}))
+            if not choice:
+                unknown += 1
+                continue
+            targets = members if members else [file_key]
+            for target in targets:
+                overrides[str(target)] = {
+                    "condition_key": choice,
+                    "journal_row": condition.get("_source_row_number"),
+                    "sample": condition.get("sample") or choice,
+                    "date": condition.get("date") or "",
+                    "memo": memo,
+                    "selection_source": "checklist_memo_row",
+                    "selected_at": now,
+                }
+                applied += 1
+            continue
+        if not choice:
             skipped += 1
             continue
         if choice == "__delete__":

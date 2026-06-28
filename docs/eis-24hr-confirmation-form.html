@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EIS 시계열 24hr 편입 담당자 확인서</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --line:#e3e6ea; --ink:#1f2430; --muted:#6b7280;
+    --accent:#2563eb; --accent-soft:#eef4ff; --warn:#b45309; --warn-soft:#fff7ed; --ok:#047857;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD Gothic Neo",sans-serif;
+    line-height:1.55;font-size:15px}
+  .wrap{max-width:1040px;margin:0 auto;padding:28px 18px 120px}
+  header.top{margin-bottom:8px}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13.5px;margin-bottom:20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:8px;
+    padding:18px 20px;margin:16px 0;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .qhead{display:flex;align-items:center;gap:8px;margin:0 0 6px;flex-wrap:wrap}
+  .qtag{font-size:12px;font-weight:700;color:#fff;background:var(--accent);
+    border-radius:6px;padding:2px 8px;letter-spacing:.3px}
+  .qtag.warn{background:var(--warn)}
+  h2{font-size:16.5px;margin:0}
+  .desc{color:var(--muted);font-size:13.5px;margin:6px 0 12px}
+  .note{background:var(--warn-soft);border:1px solid #f5d9b0;border-radius:8px;
+    padding:10px 12px;font-size:13px;color:#7c4a07;margin:10px 0}
+  .table-wrap{overflow-x:auto;margin:10px 0}
+  table{width:100%;border-collapse:collapse;font-size:12.8px;min-width:760px}
+  th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
+  th{background:#f1f3f5;font-weight:600}
+  code{background:#f1f3f5;border-radius:4px;padding:1px 5px;font-size:12.5px}
+  ul.files{margin:0;padding-left:17px}
+  ul.files li{margin:2px 0}
+  .path{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;word-break:break-all}
+  .true24{color:var(--ok);font-weight:700}
+  .missing{color:var(--warn);font-weight:700}
+  .opts{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+  .opts label{display:flex;align-items:center;gap:6px;border:1px solid var(--line);
+    border-radius:8px;padding:7px 12px;cursor:pointer;background:#fafbfc;font-size:13.5px}
+  .opts input{accent-color:var(--accent)}
+  .opts label:hover{border-color:var(--accent);background:var(--accent-soft)}
+  textarea{width:100%;min-height:58px;border:1px solid var(--line);border-radius:8px;
+    padding:9px 11px;font-family:inherit;font-size:13.5px;resize:vertical;margin-top:4px}
+  .rowq{border-top:1px dashed var(--line);padding:10px 0 2px}
+  .rowq:first-of-type{border-top:none}
+  .rowlbl{font-weight:600;font-size:13.5px;margin-bottom:2px}
+  .hint{font-size:12.5px;color:var(--muted)}
+  .bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);
+    padding:12px 18px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;
+    box-shadow:0 -2px 8px rgba(0,0,0,.04)}
+  button{font:inherit;font-weight:600;border:none;border-radius:9px;padding:11px 18px;cursor:pointer}
+  .primary{background:var(--accent);color:#fff}
+  .ghost{background:#eef0f3;color:var(--ink)}
+  .meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .meta-grid input{border:1px solid var(--line);border-radius:8px;padding:9px 11px;font:inherit;width:100%}
+  @media(max-width:640px){.meta-grid{grid-template-columns:1fr}.wrap{padding-left:12px;padding-right:12px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>EIS 시계열 24hr 데이터 비교군 편입 확인서</h1>
+    <div class="sub">목적: 시계열 EIS의 24hr 파일을 안정화 후 데이터로 보고 비교군에 넣어도 되는지 확인합니다. 내부 가명은 쓰지 않았고, 실험일지 JYJ 행번호와 실제 EIS 파일명 기준으로 적었습니다.</div>
+  </header>
+
+  <div class="card">
+    <div class="meta-grid">
+      <input id="meta_name" placeholder="작성자 성함">
+      <input id="meta_date" placeholder="작성일 (예: 2026-06-25)">
+    </div>
+    <div class="note">
+      확인 방법: <b>Project_Abstract/Cell condition Calculation.xlsx</b>의 <b>JYJ</b> 시트에서 아래 행번호를 열고,
+      표의 날짜와 샘플명이 맞는지 확인한 뒤, <b>EIS/</b> 폴더 아래 실제 파일명이 같은 셀의 연속 측정인지 표시해 주세요.
+      특히 24hr 파일이 있는 행은 “비교군에 넣어도 되는 안정화 끝점인지”를 확인해 주시면 됩니다.
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="qhead"><span class="qtag warn">Q1 · 최우선</span><h2>한 실험일지 행에 여러 파일 묶음이 잡힌 경우: 같은 셀의 연속 측정인가요?</h2></div>
+    <div class="desc">아래 행들은 같은 JYJ 행으로 수동 확정된 EIS 파일이 여러 묶음으로 나뉘어 있습니다. “6hr/7hr에서 끝난 것처럼 보이는 묶음”과 “24hr이 들어 있는 묶음”이 같은 셀의 연속 측정이면 병합해야 합니다.</div>
+    <div class="table-wrap">
+      <table>
+        <tr><th>JYJ 행</th><th>일지 날짜 / 샘플명</th><th>현재 파일 묶음</th><th>담당자 확인 지시</th></tr>
+        <tr>
+          <td>473</td>
+          <td>260527<br><b>pure 900 no SBR_4T</b><br>loading 7.5987, binder 2wt%cmc, ratio 0.96</td>
+          <td>
+            <b>초기 묶음: 0/3/4/7hr</b>
+            <ul class="files">
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure 900 no SBR 4T_0hr_02.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure 900 no SBR 4T_3hr_02.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure 900 no SBR 4T_4hr_02.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure 900 no SBR 4T_7hr_01.SEO</li>
+            </ul>
+            <b>중간 묶음: 5/6hr</b>
+            <ul class="files">
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR_5hr_02.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR_6hr_02.SEO</li>
+            </ul>
+            <b class="true24">끝점 묶음: 9/13/15/24hr</b>
+            <ul class="files">
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR_4T 9hr_01.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR 4T_13hr_01.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR 4T_15hr_01.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR 4T_24hr_01.SDE</li>
+            </ul>
+          </td>
+          <td>세 묶음이 모두 행 473 셀의 0hr부터 24hr까지 연속 측정이면 “병합”을 선택해 주세요. 24hr 파일을 행 473의 안정화 끝점으로 비교군에 넣어도 되는지도 메모해 주세요.</td>
+        </tr>
+        <tr>
+          <td>474</td>
+          <td>260527<br><b>pure 900 no SBR_4T</b><br>loading 7.3695, binder 2wt%cmc, ratio 0.96</td>
+          <td>
+            <b>초기 묶음: 0/3/4/7hr</b>
+            <ul class="files">
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure 900 no SBR 4T_2_0hr_03.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure 900 no SBR 4T_2_3hr_03.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure 900 no SBR 4T_2_4hr_03.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure 900 no SBR 4T_2_7hr_02.SEO</li>
+            </ul>
+            <b>중간 묶음: 5/6hr</b>
+            <ul class="files">
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR_2_5hr_03.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR_2_6hr_03.SEO</li>
+            </ul>
+            <b class="true24">끝점 묶음: 9/13/15/24hr</b>
+            <ul class="files">
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR 4T_2_9hr_02.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR 4T_2_13hr_02.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR 4T_2_15hr_02.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR 4T_2_24hr_02.SDE</li>
+            </ul>
+          </td>
+          <td>세 묶음이 모두 행 474 셀의 연속 측정이면 “병합”을 선택해 주세요. 473행과 474행이 서로 다른 반복 셀인지도 메모해 주세요.</td>
+        </tr>
+        <tr>
+          <td>475</td>
+          <td>260527<br><b>1.5act no SBR_4T</b><br>loading 9.0587, binder 2wt%cmc, ratio 0.96</td>
+          <td>
+            <b>단독 6hr 파일</b>
+            <ul class="files"><li class="path">260527/1.5act no SBR/1.5act no SBR_6hr_02.SEO</li></ul>
+            <b class="true24">0hr부터 24hr까지 있는 묶음</b>
+            <ul class="files">
+              <li class="path">260527/1.5act no SBR/1.5act NO SBR 4T 0hr_04.SEO</li>
+              <li class="path">260527/1.5act no SBR/1.5act no SBR 4T 0hr again_02.SEO</li>
+              <li class="path">260527/1.5act no SBR/1.5act no SBR 4T_3hr_02.SEO</li>
+              <li class="path">260527/1.5act no SBR/1.5act no SBR 4T_4hr_02.SEO</li>
+              <li class="path">260527/1.5act no SBR/1.5act no SBR_4T_7hr_03.SEO</li>
+              <li class="path">260527/1.5act no SBR/1.5act no SBR 4T_9hr_03.SEO</li>
+              <li class="path">260527/1.5act no SBR/1.5act no SBR 4T 13hr_03.SEO</li>
+              <li class="path">260527/1.5act no SBR/1.5act no SBR 4T_15hr_03.SEO</li>
+              <li class="path">260527/1.5act no SBR/1.5act no SBR 4T_24hr_03.SDE</li>
+            </ul>
+          </td>
+          <td>단독 6hr 파일이 같은 셀의 재측정인지, 아니면 별도 셀/오입력인지 확인해 주세요. 24hr 파일은 행 475의 안정화 끝점으로 써도 되는지도 표시해 주세요.</td>
+        </tr>
+        <tr>
+          <td>476</td>
+          <td>260527<br><b>1.5act no SBR_4T</b><br>loading 8.2523, binder 2wt%cmc, ratio 0.96</td>
+          <td>
+            <b>단독 6hr 파일</b>
+            <ul class="files"><li class="path">260527/1.5act no SBR/1.5act no SBR_2_6hr_03.SEO</li></ul>
+            <b class="true24">0hr부터 24hr까지 있는 묶음</b>
+            <ul class="files">
+              <li class="path">260527/1.5act no SBR/1.5 act no SBR 4T_2 0hr_03.SEO</li>
+              <li class="path">260527/1.5act no SBR/1.5act no SBR 4T_2_3hr_03.SEO</li>
+              <li class="path">260527/1.5act no SBR/1.5 act no SBR 4T_2_4hr_03.SEO</li>
+              <li class="path">260527/1.5act no SBR/1.5act no SBR_4T_2_7hr_04.SEO</li>
+              <li class="path">260527/1.5act no SBR/1.5act no SBR 4T_2_9hr_04.SEO</li>
+              <li class="path">260527/1.5act no SBR/1.5act no SBR 4T_2_13hr_04.SEO</li>
+              <li class="path">260527/1.5act no SBR/1.5act no SBR 4T_2_15hr_04.SEO</li>
+              <li class="path">260527/1.5act no SBR/1.5act no SBR 4T_2_24hr_04.SDE</li>
+            </ul>
+          </td>
+          <td>단독 6hr 파일이 같은 셀의 재측정인지, 아니면 별도 셀/오입력인지 확인해 주세요. 행 475와 476이 서로 다른 반복 셀인지도 메모해 주세요.</td>
+        </tr>
+        <tr>
+          <td>506</td>
+          <td>260610<br><b>pure GF 964_4T_1</b><br>loading 8.0571, binder 2wt%cmc, ratio 0.96</td>
+          <td>
+            <b>단독 6hr 파일</b>
+            <ul class="files"><li class="path">260610/260610/pure 4T_1 6hr again_01.SDE</li></ul>
+            <b class="missing">0/3/6hr 묶음, 24hr 파일 없음</b>
+            <ul class="files">
+              <li class="path">260610/260610/pure 4T_1 0hr_01.SDE</li>
+              <li class="path">260610/260610/pure 4T_1 3hr_01.SDE</li>
+              <li class="path">260610/260610/pure 4T_1_6hr_01.SDE</li>
+            </ul>
+          </td>
+          <td>행 506은 현재 24hr 파일을 찾지 못했습니다. 6hr에서 종료된 실험인지, 24hr 파일이 다른 이름/폴더에 있는지 확인해 주세요.</td>
+        </tr>
+      </table>
+    </div>
+    <div class="rowq"><div class="rowlbl">행 473</div>
+      <div class="opts">
+        <label><input type="radio" name="Q1_473" value="병합: 같은 셀의 연속 측정이며 24hr 끝점 사용 가능">병합, 24hr 사용 가능</label>
+        <label><input type="radio" name="Q1_473" value="분리 유지: 별개 셀 또는 별도 실험">분리 유지</label>
+        <label><input type="radio" name="Q1_473" value="추가 확인 필요">추가 확인 필요</label>
+      </div>
+    </div>
+    <div class="rowq"><div class="rowlbl">행 474</div>
+      <div class="opts">
+        <label><input type="radio" name="Q1_474" value="병합: 같은 셀의 연속 측정이며 24hr 끝점 사용 가능">병합, 24hr 사용 가능</label>
+        <label><input type="radio" name="Q1_474" value="분리 유지: 별개 셀 또는 별도 실험">분리 유지</label>
+        <label><input type="radio" name="Q1_474" value="추가 확인 필요">추가 확인 필요</label>
+      </div>
+    </div>
+    <div class="rowq"><div class="rowlbl">행 475</div>
+      <div class="opts">
+        <label><input type="radio" name="Q1_475" value="6hr 파일 포함 병합, 24hr 끝점 사용 가능">6hr 포함 병합</label>
+        <label><input type="radio" name="Q1_475" value="6hr 파일은 분리/제외, 24hr 묶음만 사용">6hr 분리/제외</label>
+        <label><input type="radio" name="Q1_475" value="추가 확인 필요">추가 확인 필요</label>
+      </div>
+    </div>
+    <div class="rowq"><div class="rowlbl">행 476</div>
+      <div class="opts">
+        <label><input type="radio" name="Q1_476" value="6hr 파일 포함 병합, 24hr 끝점 사용 가능">6hr 포함 병합</label>
+        <label><input type="radio" name="Q1_476" value="6hr 파일은 분리/제외, 24hr 묶음만 사용">6hr 분리/제외</label>
+        <label><input type="radio" name="Q1_476" value="추가 확인 필요">추가 확인 필요</label>
+      </div>
+    </div>
+    <div class="rowq"><div class="rowlbl">행 506</div>
+      <div class="opts">
+        <label><input type="radio" name="Q1_506" value="6hr 종료 실험: 24hr 없음">6hr 종료</label>
+        <label><input type="radio" name="Q1_506" value="24hr 파일 존재: 메모에 경로 기재">24hr 파일 있음</label>
+        <label><input type="radio" name="Q1_506" value="추가 확인 필요">추가 확인 필요</label>
+      </div>
+    </div>
+    <textarea data-key="Q1_note" placeholder="Q1 추가 메모: 예) 473/474는 반복 셀, 506의 24hr 파일은 다른 폴더에 있음 등"></textarea>
+  </div>
+
+  <div class="card">
+    <div class="qhead"><span class="qtag">Q2</span><h2>24hr이 없는 0.5C/rate 계열 파일: 안정화 비교에서 제외할까요?</h2></div>
+    <div class="desc">아래 행들은 현재 매칭된 EIS 파일이 9hr까지만 있고 24hr 파일이 없습니다. 같은 날짜 주변의 0.5C/rate 시험과 섞여 있어, 안정화 24hr 비교군에 넣을지 제외할지 확인이 필요합니다.</div>
+    <div class="table-wrap">
+      <table>
+        <tr><th>JYJ 행</th><th>일지 날짜 / 샘플명</th><th>현재 확인된 실제 EIS 파일</th><th>확인 지시</th></tr>
+        <tr>
+          <td>482</td>
+          <td>260602<br><b>pure 900 3T_1_0.5C</b></td>
+          <td>
+            <ul class="files">
+              <li class="path">260603/Pure/Pure 3T_1/pure 3T_1_0hr_01.SDE</li>
+              <li class="path">260603/Pure/Pure 3T_1/pure 3T_1_1hr_01.SDE</li>
+              <li class="path">260603/Pure/Pure 3T_1/pure 3T_1_2hr_01.SDE</li>
+              <li class="path">260603/Pure/Pure 3T_1/pure 3T_1_3hr_01.SDE</li>
+              <li class="path">260603/Pure/Pure 3T_1/pure 3T_1_4hr_01.SDE</li>
+              <li class="path">260603/Pure/Pure 3T_1/pure 3T_1_5hr_01.SDE</li>
+              <li class="path">260603/Pure/Pure 3T_1/pure 3T_1_6hr_01.SDE</li>
+              <li class="path">260603/Pure/Pure 3T_1/pure 3T_1_9hr_01.SDE</li>
+            </ul>
+          </td>
+          <td>24hr 파일이 없으면 안정화 24hr 비교군에서는 제외하는 것이 맞는지 확인해 주세요.</td>
+        </tr>
+        <tr>
+          <td>484</td>
+          <td>260602<br><b>pure 900 5T_1_0.5C</b></td>
+          <td>
+            <ul class="files">
+              <li class="path">260603/Pure/Pure 5T_1/pure 5T_1_0hr_03.SDE</li>
+              <li class="path">260603/Pure/Pure 5T_1/pure 5T_1_1hr_03.SDE</li>
+              <li class="path">260603/Pure/Pure 5T_1/pure 5T_1_2hr_03.SDE</li>
+              <li class="path">260603/Pure/Pure 5T_1/pure 5T_1_3hr_03.SDE</li>
+              <li class="path">260603/Pure/Pure 5T_1/pure 5T_1_4hr_03.SDE</li>
+              <li class="path">260603/Pure/Pure 5T_1/pure 5T_1_5hr_03.SDE</li>
+              <li class="path">260603/Pure/Pure 5T_1/pure 5T_1_6hr_03.SDE</li>
+              <li class="path">260603/Pure/Pure 5T_1/pure 5T_1_9hr_03.SDE</li>
+            </ul>
+          </td>
+          <td>9hr 종료가 의도된 프로토콜인지, 24hr 누락인지 확인해 주세요.</td>
+        </tr>
+        <tr>
+          <td>487</td>
+          <td>260602<br><b>1.5act 2T_1_0.5C</b></td>
+          <td>
+            <ul class="files">
+              <li class="path">260603/1.5act/1.5act 2T_1/1.5act 2T_1_0hr_01.SDE</li>
+              <li class="path">260603/1.5act/1.5act 2T_1/1.5act 2T_1_1hr_01.SDE</li>
+              <li class="path">260603/1.5act/1.5act 2T_1/1.5 act 2T_1_2hr_01.SDE</li>
+              <li class="path">260603/1.5act/1.5act 2T_1/1.5act 2T_1_3hr_01.SDE</li>
+              <li class="path">260603/1.5act/1.5act 2T_1/1.5act 2T_1_4hr_01.SDE</li>
+              <li class="path">260603/1.5act/1.5act 2T_1/1.5act 2T_1_5hr_01.SDE</li>
+              <li class="path">260603/1.5act/1.5act 2T_1/1.5act 2T_1_6hr_01.SDE</li>
+              <li class="path">260603/1.5act/1.5act 2T_1/1.5act 2T_1_9hr_01.SDE</li>
+            </ul>
+          </td>
+          <td>24hr 파일이 없으면 안정화 24hr 비교군에서는 제외하는 것이 맞는지 확인해 주세요.</td>
+        </tr>
+        <tr>
+          <td>490</td>
+          <td>260602<br><b>1.5act 3T_2_rate per</b></td>
+          <td>
+            <ul class="files">
+              <li class="path">260603/1.5act/1.5act 3T_2/1.5act 3T_2_0hr_04.SDE</li>
+              <li class="path">260603/1.5act/1.5act 3T_2/1.5act 3T_2_1hr_04.SDE</li>
+              <li class="path">260603/1.5act/1.5act 3T_2/1.5act 3T_2_2hr_04.SDE</li>
+              <li class="path">260603/1.5act/1.5act 3T_2/1.5act 3T_2_3hr_04.SDE</li>
+              <li class="path">260603/1.5act/1.5act 3T_2/1.5act 3T_2_4hr_04.SDE</li>
+              <li class="path">260603/1.5act/1.5act 3T_2/1.5act 3T_2_5hr_04.SDE</li>
+              <li class="path">260603/1.5act/1.5act 3T_2/1.5act 3T_2_6hr_04.SDE</li>
+              <li class="path">260603/1.5act/1.5act 3T_2/1.5act 3T_2_9hr_04.SDE</li>
+            </ul>
+          </td>
+          <td>행 이름에 rate per가 있으므로 안정화 비교가 아니라 rate 시험으로 제외할지 확인해 주세요.</td>
+        </tr>
+      </table>
+    </div>
+    <div class="rowq"><div class="rowlbl">24hr 없는 9hr 종료 파일들(행 482, 484, 487, 490)</div>
+      <div class="opts">
+        <label><input type="radio" name="Q2_no24" value="24hr 안정화 비교군에서 제외">제외</label>
+        <label><input type="radio" name="Q2_no24" value="9hr를 안정화 끝점으로 인정">9hr를 끝점으로 인정</label>
+        <label><input type="radio" name="Q2_no24" value="일부만 사용: 메모 참조">일부만 사용</label>
+      </div>
+    </div>
+    <div class="rowq"><div class="rowlbl">0.5C/rate per 계열 전체 해석</div>
+      <div class="opts">
+        <label><input type="radio" name="Q2_rate_scope" value="rate/0.5C 계열은 안정화 24hr 비교에서 제외">rate/0.5C 계열 제외</label>
+        <label><input type="radio" name="Q2_rate_scope" value="24hr 파일이 있는 행은 비교에 포함 가능">24hr 있는 행은 포함</label>
+        <label><input type="radio" name="Q2_rate_scope" value="샘플별로 판단: 메모 참조">샘플별 판단</label>
+      </div>
+    </div>
+    <textarea data-key="Q2_note" placeholder="Q2 추가 메모: 예) 482/484/487/490은 9hr 종료 프로토콜, 483/485/488/489의 24hr은 사용 가능 등"></textarea>
+  </div>
+
+  <div class="card">
+    <div class="qhead"><span class="qtag">Q3</span><h2>0hr 없이 24hr이 있는 파일 묶음: 끝점 비교에는 사용해도 되나요?</h2></div>
+    <div class="desc">아래 묶음은 24hr 파일이 있지만 같은 묶음 안에 0hr이 없습니다. 24hr 하나만 비교군에 넣는 것은 가능하지만, 0hr 대비 변화량까지 보려면 앞쪽 파일과 병합 또는 별도 연결이 필요합니다.</div>
+    <div class="table-wrap">
+      <table>
+        <tr><th>JYJ 행</th><th>일지 날짜 / 샘플명</th><th>0hr 없는 24hr 포함 파일 묶음</th><th>확인 지시</th></tr>
+        <tr>
+          <td>471</td>
+          <td>260521<br><b>DL pc 2T2T_2</b><br>binder 2wt%cmc/40wt%SBR, ratio 0.95</td>
+          <td>
+            <ul class="files">
+              <li class="path">260521/1hr/DL 2T2T_2 1hr_04.SEO</li>
+              <li class="path">260521/2hr/DL 2T2T_2 2hr_04.SEO</li>
+              <li class="path">260521/3hr/DL 2T2T_2_3hr_04.SEO</li>
+              <li class="path">260521/4hr/DL2T2T_2_4hr_04.SEO</li>
+              <li class="path">260521/5hr/DL2T2T_2 5hr_04.SEO</li>
+              <li class="path">260521/8hr/DL2T2T_2 8hr_04.SEO</li>
+              <li class="path">260521/9hr/DL2T2T_2 9hr_04.SEO</li>
+              <li class="path">260521/21hr/DL2T2T_2 nxt day 9_04.SEO</li>
+              <li class="path">260521/22hr/DL2T2T_2 nxt day 10_04.SEO</li>
+              <li class="path">260521/24hr/DL2T2T_2 24hr_04.SEO</li>
+            </ul>
+          </td>
+          <td>0hr 파일이 따로 있는지, 없더라도 24hr 파일만 안정화 끝점으로 써도 되는지 확인해 주세요.</td>
+        </tr>
+        <tr>
+          <td>473</td>
+          <td>260527<br><b>pure 900 no SBR_4T</b></td>
+          <td>
+            <ul class="files">
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR_4T 9hr_01.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR 4T_13hr_01.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR 4T_15hr_01.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR 4T_24hr_01.SDE</li>
+            </ul>
+          </td>
+          <td>Q1의 앞쪽 0/3/4/7hr 및 5/6hr 파일과 같은 셀인지 확인해 주세요.</td>
+        </tr>
+        <tr>
+          <td>474</td>
+          <td>260527<br><b>pure 900 no SBR_4T</b></td>
+          <td>
+            <ul class="files">
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR 4T_2_9hr_02.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR 4T_2_13hr_02.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR 4T_2_15hr_02.SEO</li>
+              <li class="path">260527/pure GF 900 no SBR_ 4T/pure GF 900 no SBR 4T_2_24hr_02.SDE</li>
+            </ul>
+          </td>
+          <td>Q1의 앞쪽 0/3/4/7hr 및 5/6hr 파일과 같은 셀인지 확인해 주세요.</td>
+        </tr>
+      </table>
+    </div>
+    <div class="opts">
+      <label><input type="radio" name="Q3_use" value="24hr 끝점만 비교에는 사용 가능, 변화량 분석은 병합 필요">끝점 비교 사용 가능</label>
+      <label><input type="radio" name="Q3_use" value="0hr 연결 확인 전까지 비교군 편입 보류">확인 전까지 보류</label>
+      <label><input type="radio" name="Q3_use" value="행별로 다름: 메모 참조">행별로 다름</label>
+    </div>
+    <textarea data-key="Q3_note" placeholder="Q3 추가 메모"></textarea>
+  </div>
+
+  <div class="card">
+    <div class="qhead"><span class="qtag">Q4</span><h2>수동 확정된 중복 행: 의도된 재측정/반복 셀인가요?</h2></div>
+    <div class="desc">행 473, 474, 475, 476, 506은 현재 여러 EIS 파일 묶음이 같은 실험일지 행으로 수동 확정되어 있습니다. 자동 충돌 감지는 수동 확정 행을 충돌로 막지 않으므로 담당자 판단이 필요합니다.</div>
+    <div class="opts">
+      <label><input type="radio" name="Q4_intent" value="의도됨: 같은 셀의 연속/재측정 또는 반복 셀">의도됨</label>
+      <label><input type="radio" name="Q4_intent" value="일부 매칭 오류: 메모에 수정 행 또는 제외 파일 기재">일부 매칭 오류</label>
+      <label><input type="radio" name="Q4_intent" value="추가 확인 필요">추가 확인 필요</label>
+    </div>
+    <textarea data-key="Q4_note" placeholder="매칭 오류가 있으면 실제 파일명과 올바른 JYJ 행번호를 적어주세요"></textarea>
+  </div>
+
+  <div class="card">
+    <div class="qhead"><span class="qtag">Q5</span><h2>샘플명/소재 토큰 해석 확인</h2></div>
+    <div class="desc">아래 표기들이 실험일지 의도와 같은지 확인해 주세요. 이 해석이 틀리면 비교군 묶음이 달라질 수 있습니다.</div>
+    <div class="table-wrap">
+      <table>
+        <tr><th>확인할 표기</th><th>현재 해석</th><th>영향</th></tr>
+        <tr><td><code>no SBR_4T</code></td><td>2wt%cmc, ratio 0.96, no SBR 계열 4T</td><td>행 473~476의 24hr 편입 여부</td></tr>
+        <tr><td><code>pure GF 964_4T_1</code></td><td>2wt%cmc, ratio 0.96, pure GF 계열 4T 반복 1</td><td>행 506의 6hr 종료/24hr 누락 판단</td></tr>
+        <tr><td><code>2T2T</code></td><td>2wt%cmc/40wt%SBR, ratio 0.95 계열</td><td>행 471의 24hr 단독 끝점 사용 여부</td></tr>
+        <tr><td><code>0.5C</code> / <code>rate per</code></td><td>일반 안정화 EIS와 다른 rate 시험 가능성 있음</td><td>행 482~490 포함/제외 기준</td></tr>
+      </table>
+    </div>
+    <div class="opts">
+      <label><input type="radio" name="Q5_ok" value="현재 해석 모두 맞음">모두 맞음</label>
+      <label><input type="radio" name="Q5_ok" value="일부 수정 필요: 메모 참조">일부 수정 필요</label>
+    </div>
+    <textarea data-key="Q5_note" placeholder="수정할 표기와 올바른 해석을 적어주세요"></textarea>
+  </div>
+
+  <div class="card">
+    <div class="qhead"><span class="qtag">기타</span><h2>추가 의견</h2></div>
+    <textarea data-key="extra_note" placeholder="자유 의견" style="min-height:80px"></textarea>
+  </div>
+</div>
+
+<div class="bar">
+  <button class="primary" onclick="copyAnswers()">답변 복사</button>
+  <button class="ghost" onclick="downloadAnswers('txt')">TXT 다운로드</button>
+  <button class="ghost" onclick="downloadAnswers('json')">JSON 다운로드</button>
+</div>
+
+<script>
+function collect(){
+  const data={meta:{},answers:{}};
+  data.meta.name=document.getElementById('meta_name').value.trim();
+  data.meta.date=document.getElementById('meta_date').value.trim();
+  document.querySelectorAll('input[type=radio]:checked').forEach(r=>{data.answers[r.name]=r.value;});
+  document.querySelectorAll('textarea[data-key]').forEach(t=>{
+    if(t.value.trim()) data.answers[t.dataset.key]=t.value.trim();
+  });
+  return data;
+}
+const LABELS={
+  Q1_473:'Q1 행473',Q1_474:'Q1 행474',Q1_475:'Q1 행475',Q1_476:'Q1 행476',Q1_506:'Q1 행506',Q1_note:'Q1 메모',
+  Q2_no24:'Q2 24hr 없는 9hr 종료 파일',Q2_rate_scope:'Q2 rate/0.5C 계열 해석',Q2_note:'Q2 메모',
+  Q3_use:'Q3 0hr 없는 24hr 파일 사용',Q3_note:'Q3 메모',
+  Q4_intent:'Q4 수동 중복 행 의도 여부',Q4_note:'Q4 메모',
+  Q5_ok:'Q5 샘플명/소재 토큰',Q5_note:'Q5 메모',extra_note:'기타 의견'
+};
+function asText(d){
+  let s='[EIS 24hr 편입 확인서 회신]\n';
+  s+=`작성자: ${d.meta.name||'-'}   작성일: ${d.meta.date||'-'}\n`;
+  s+='--------------------------------------\n';
+  for(const k in LABELS){ if(d.answers[k]) s+=`- ${LABELS[k]}: ${d.answers[k]}\n`; }
+  return s;
+}
+function copyAnswers(){
+  const t=asText(collect());
+  navigator.clipboard.writeText(t).then(()=>alert('답변이 복사되었습니다. 메신저/메일에 붙여넣어 회신해 주세요.'),
+    ()=>fallback(t));
+}
+function fallback(t){const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();alert('답변이 복사되었습니다.');}
+function downloadAnswers(fmt){
+  const d=collect();
+  const content = fmt==='json'? JSON.stringify(d,null,2) : asText(d);
+  const blob=new Blob([content],{type:'text/plain;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  const stamp=(d.meta.name||'answer').replace(/\s+/g,'_');
+  a.href=url;a.download=`eis_24hr_confirmation_${stamp}.${fmt}`;a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>

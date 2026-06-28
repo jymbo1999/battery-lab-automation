@@ -20,6 +20,7 @@ class ConditionRuleTests(unittest.TestCase):
         conditions = {
             "A": {
                 "cell_id": "A",
+                "cell_type": "LIB",
                 "areal_mass_density": 7.0,
                 "electrolyte": "1.0M LiPF6",
                 "binder": "CMC/SBR",
@@ -28,6 +29,7 @@ class ConditionRuleTests(unittest.TestCase):
             },
             "B": {
                 "cell_id": "B",
+                "cell_type": "LIB",
                 "areal_mass_density": 7.4,
                 "electrolyte": "1.0M LiPF6",
                 "binder": "CMC/SBR",
@@ -36,6 +38,7 @@ class ConditionRuleTests(unittest.TestCase):
             },
             "C": {
                 "cell_id": "C",
+                "cell_type": "LIB",
                 "areal_mass_density": 7.8,
                 "electrolyte": "1.0M LiPF6",
                 "binder": "CMC/SBR",
@@ -44,6 +47,7 @@ class ConditionRuleTests(unittest.TestCase):
             },
             "D": {
                 "cell_id": "D",
+                "cell_type": "LIB",
                 "areal_mass_density": 8.4,
                 "electrolyte": "1.0M LiPF6",
                 "binder": "CMC/SBR",
@@ -52,6 +56,7 @@ class ConditionRuleTests(unittest.TestCase):
             },
             "E": {
                 "cell_id": "E",
+                "cell_type": "LIB",
                 "areal_mass_density": 7.1,
                 "electrolyte": "1.0M LiPF6",
                 "binder": "PVDF",
@@ -67,6 +72,53 @@ class ConditionRuleTests(unittest.TestCase):
         self.assertEqual(grades[("A", "C")], "B")
         self.assertEqual(grades[("A", "D")], "C")
         self.assertEqual(grades[("A", "E")], "X")
+
+    def test_comparison_candidates_require_same_type_voltage_and_ratio(self):
+        base = {
+            "cell_type": "LIB",
+            "areal_mass_density": 7.0,
+            "electrolyte": "1.0M LiPF6",
+            "binder": "CMC/SBR",
+            "voltage_range": "0.01~2V",
+            "ratio": "0.95",
+        }
+        conditions = {
+            "A": {"cell_id": "A", **base},
+            "B": {"cell_id": "B", **base, "cell_type": "ZIB"},
+            "C": {"cell_id": "C", **base, "voltage_range": "0.2~1.5V"},
+            "D": {"cell_id": "D", **base, "ratio": "0.7"},
+        }
+
+        candidates = build_comparison_candidates(["A", "B", "C", "D"], conditions)
+        by_pair = {(row.cell_id_a, row.cell_id_b): row for row in candidates}
+
+        self.assertEqual(by_pair[("A", "B")].comparison_grade, "X")
+        self.assertFalse(by_pair[("A", "B")].same_cell_type)
+        self.assertIn("cell_type", by_pair[("A", "B")].reason)
+        self.assertEqual(by_pair[("A", "C")].comparison_grade, "X")
+        self.assertIn("voltage_range", by_pair[("A", "C")].reason)
+        self.assertEqual(by_pair[("A", "D")].comparison_grade, "X")
+        self.assertIn("ratio", by_pair[("A", "D")].reason)
+
+    def test_comparison_candidates_exclude_cv_and_gitt_cells(self):
+        base = {
+            "cell_type": "LIB",
+            "areal_mass_density": 7.0,
+            "electrolyte": "1.0M LiPF6",
+            "binder": "CMC/SBR",
+            "voltage_range": "0.01~2V",
+            "ratio": "0.95",
+        }
+        conditions = {
+            "A": {"cell_id": "A", "sample": "A", **base},
+            "B": {"cell_id": "B", "sample": "B", **base},
+            "CV row": {"cell_id": "CV row", "sample": "A CV", **base},
+            "GITT row": {"cell_id": "GITT row", "sample": "B GITT", **base},
+        }
+
+        candidates = build_comparison_candidates(["A", "B", "CV row", "GITT row"], conditions)
+
+        self.assertEqual([(row.cell_id_a, row.cell_id_b) for row in candidates], [("A", "B")])
 
     def test_analysis_availability_keeps_registry_cells_without_files(self):
         conditions = read_conditions(SAMPLE_DATA_DIR / "cell_conditions.csv")
@@ -100,6 +152,7 @@ class ConditionRuleTests(unittest.TestCase):
         conditions = {
             "A": {
                 "cell_id": "A",
+                "cell_type": "LIB",
                 "areal_mass_density": 7.0,
                 "electrolyte": "1.0M LiPF6",
                 "binder": "CMC/SBR",
@@ -108,6 +161,7 @@ class ConditionRuleTests(unittest.TestCase):
             },
             "B": {
                 "cell_id": "B",
+                "cell_type": "LIB",
                 "areal_mass_density": 7.2,
                 "electrolyte": "1.0M LiPF6",
                 "binder": "CMC/SBR",
@@ -129,6 +183,7 @@ class ConditionRuleTests(unittest.TestCase):
         conditions = {
             "A": {
                 "cell_id": "A",
+                "cell_type": "LIB",
                 "areal_mass_density": 7.0,
                 "electrolyte": "1.0M LiPF6",
                 "binder": "CMC/SBR",
@@ -137,6 +192,7 @@ class ConditionRuleTests(unittest.TestCase):
             },
             "B": {
                 "cell_id": "B",
+                "cell_type": "LIB",
                 "areal_mass_density": 7.2,
                 "electrolyte": "1.0M LiPF6",
                 "binder": "CMC/SBR",

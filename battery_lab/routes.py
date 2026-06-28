@@ -17,11 +17,26 @@ from .config import (
     BATTERY_OUTPUT_ROOT,
     BATTERY_STREAMLIT_URL,
 )
+from .conditions import read_conditions
 from .matching_service import apply_checklist_answers, build_match_payload, save_match_overrides, save_match_review_actions, save_match_selections, verification_payload
 from .verification_view import render_verification_html
 from .checklist_view import render_checklist_html
 from .ai_service import ai_status_payload, get_ai_run, run_ai_smoke
-from .excel_dashboard import DEFAULT_CONDITION_SHEET, WorkbookStore, render_page as render_excel_dashboard_page
+from .capacity_csv_audit import audit_capacity_csv_wrd_pairs
+from .excel_dashboard import DEFAULT_CONDITION_SHEET, WorkbookStore, parse_positive_int, render_page as render_excel_dashboard_page
+from .experiment_import import (
+    REQUIRED_METADATA_FIELDS,
+    append_import_draft_files,
+    build_import_draft_cluster_preview,
+    commit_import_draft,
+    create_import_draft,
+    load_import_draft,
+    manifest_payload,
+    metadata_options_from_conditions,
+    remove_import_draft_file,
+    update_import_draft_assignments,
+    update_import_draft_metadata,
+)
 from .job_service import (
     JOB_TYPES,
     cancel_job,
@@ -36,6 +51,7 @@ from .viewer_service import (
     capacity_overlay_payload,
     capacity_source_payload,
     capacity_viewer_options,
+    draft_overlay_payload,
     eis_overlay_payload,
     eis_viewer_options,
     finder_html,
@@ -101,12 +117,240 @@ def _count_files(root: Path, suffixes: set[str]) -> int:
     )
 
 
+@blueprint.post("/api/import/drafts")
+def create_import_draft_api():
+    uploads = request.files.getlist("files")
+    if not uploads:
+        return jsonify({"ok": False, "error": "No files uploaded."}), 400
+    manifest = create_import_draft(
+        [(upload.filename or "upload", upload.stream) for upload in uploads],
+        BATTERY_OUTPUT_ROOT,
+        write_raw_wrd=request.form.get("write_raw_wrd", "").strip().lower() in {"1", "true", "yes", "on"},
+    )
+    return jsonify({"ok": not manifest.errors, **_import_draft_payload(manifest)})
+
+
 def _is_relative_to(path: Path, root: Path) -> bool:
     try:
         path.resolve().relative_to(root.resolve())
         return True
     except ValueError:
         return False
+
+
+def _import_draft_payload(manifest) -> dict:
+    payload = manifest_payload(manifest)
+    draft_root = Path(manifest.draft_root)
+    for item in payload.get("files", []):
+        plot_path = Path(item.get("plot_path") or "")
+        if plot_path and _is_relative_to(plot_path, draft_root):
+            item["plot_url"] = url_for(
+                "battery_lab.import_draft_artifact",
+                draft_id=manifest.draft_id,
+                rel_path=str(plot_path.resolve().relative_to(draft_root.resolve())),
+            )
+        else:
+            item["plot_url"] = ""
+    return payload
+
+
+@blueprint.get("/api/import/drafts/<draft_id>/artifact/<path:rel_path>")
+def import_draft_artifact(draft_id: str, rel_path: str):
+    draft_root = (BATTERY_OUTPUT_ROOT / "import_drafts" / draft_id).resolve()
+    path = (draft_root / rel_path).resolve()
+    if not _is_relative_to(path, draft_root) or not path.is_file():
+        abort(404)
+    return send_file(path)
+
+
+@blueprint.patch("/api/import/drafts/<draft_id>/assignments")
+def update_import_draft_assignments_api(draft_id: str):
+    payload = request.get_json(silent=True) or {}
+    assignments = payload.get("assignments") or {}
+    if not isinstance(assignments, dict):
+        return jsonify({"ok": False, "error": "assignments must be an object keyed by file_id."}), 400
+    try:
+        manifest = update_import_draft_assignments(BATTERY_OUTPUT_ROOT, draft_id, {str(k): str(v) for k, v in assignments.items()})
+    except FileNotFoundError:
+        return jsonify({"ok": False, "error": "Draft manifest not found."}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **_import_draft_payload(manifest)})
+
+
+@blueprint.post("/api/import/drafts/<draft_id>/files")
+def append_import_draft_files_api(draft_id: str):
+    uploads = request.files.getlist("files")
+    if not uploads:
+        return jsonify({"ok": False, "error": "No files uploaded."}), 400
+    try:
+        manifest = append_import_draft_files(
+            BATTERY_OUTPUT_ROOT,
+            draft_id,
+            [(upload.filename or "upload", upload.stream) for upload in uploads],
+            write_raw_wrd=request.form.get("write_raw_wrd", "").strip().lower() in {"1", "true", "yes", "on"},
+        )
+    except FileNotFoundError:
+        return jsonify({"ok": False, "error": "Draft manifest not found."}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": not manifest.errors, **_import_draft_payload(manifest)})
+
+
+@blueprint.delete("/api/import/drafts/<draft_id>/files/<file_id>")
+def remove_import_draft_file_api(draft_id: str, file_id: str):
+    try:
+        manifest = remove_import_draft_file(BATTERY_OUTPUT_ROOT, draft_id, file_id)
+    except FileNotFoundError:
+        return jsonify({"ok": False, "error": "Draft manifest not found."}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, **_import_draft_payload(manifest)})
+
+
+@blueprint.get("/api/import/drafts/<draft_id>/overlay")
+def import_draft_overlay_api(draft_id: str):
+    """Render the live-viewer overlay (graph + KPI table) for a set of draft files.
+
+    EIS time-series files are passed together so they overlay into one graph.
+    """
+    file_ids = [fid for fid in request.args.get("file_ids", "").split(",") if fid]
+    kind = "capacity" if request.args.get("kind") == "capacity" else "eis"
+    color_mode = "time_series" if request.args.get("color_mode") == "time_series" else "comparison"
+    try:
+        manifest = load_import_draft(BATTERY_OUTPUT_ROOT, draft_id)
+    except FileNotFoundError:
+        return jsonify({"available": False, "html": "", "errors": ["Draft manifest not found."], "title": ""}), 404
+    draft_root = Path(manifest.draft_root)
+    by_id = {item.file_id: item for item in manifest.files}
+    rel_paths: list[str] = []
+    for fid in file_ids:
+        item = by_id.get(fid)
+        if not item:
+            continue
+        src = Path(item.processed_path) if (kind == "capacity" and item.processed_path) else Path(item.raw_path)
+        try:
+            rel_paths.append(str(src.resolve().relative_to(draft_root.resolve())))
+        except ValueError:
+            rel_paths.append(src.name)
+    try:
+        payload = draft_overlay_payload(
+            draft_root,
+            rel_paths,
+            kind=kind,
+            color_mode=color_mode,
+            title=request.args.get("title", ""),
+        )
+    except Exception as exc:
+        return jsonify({"available": False, "html": "", "errors": [str(exc)], "title": request.args.get("title", "")}), 500
+    return jsonify(payload)
+
+
+@blueprint.get("/api/import/metadata-options")
+def import_metadata_options_api():
+    if not BATTERY_CONDITION_WORKBOOK.exists():
+        return jsonify({"ok": True, "required_fields": REQUIRED_METADATA_FIELDS, "options": {}})
+    try:
+        conditions = read_conditions(BATTERY_CONDITION_WORKBOOK, sheet_name=DEFAULT_CONDITION_SHEET)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc), "required_fields": REQUIRED_METADATA_FIELDS, "options": {}}), 500
+    return jsonify(
+        {
+            "ok": True,
+            "required_fields": REQUIRED_METADATA_FIELDS,
+            "options": metadata_options_from_conditions(conditions),
+        }
+    )
+
+
+@blueprint.patch("/api/import/drafts/<draft_id>/metadata")
+def update_import_draft_metadata_api(draft_id: str):
+    payload = request.get_json(silent=True) or {}
+    metadata = payload.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        return jsonify({"ok": False, "error": "metadata must be an object."}), 400
+    try:
+        manifest = update_import_draft_metadata(BATTERY_OUTPUT_ROOT, draft_id, metadata)
+    except FileNotFoundError:
+        return jsonify({"ok": False, "error": "Draft manifest not found."}), 404
+    response = _import_draft_payload(manifest)
+    return jsonify({"ok": manifest.metadata_status == "ready", **response})
+
+
+@blueprint.get("/api/import/drafts/<draft_id>/cluster-preview")
+def import_draft_cluster_preview_api(draft_id: str):
+    try:
+        conditions = read_conditions(BATTERY_CONDITION_WORKBOOK, sheet_name=DEFAULT_CONDITION_SHEET) if BATTERY_CONDITION_WORKBOOK.exists() else {}
+        payload = build_import_draft_cluster_preview(BATTERY_OUTPUT_ROOT, draft_id, conditions)
+    except FileNotFoundError:
+        return jsonify({"ok": False, "error": "Draft manifest not found."}), 404
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    return jsonify({"ok": payload.get("metadata_status") == "ready", **payload})
+
+
+@blueprint.post("/api/import/drafts/<draft_id>/commit")
+def commit_import_draft_api(draft_id: str):
+    try:
+        manifest = commit_import_draft(
+            BATTERY_OUTPUT_ROOT,
+            draft_id,
+            eis_root=BATTERY_EIS_ROOT,
+            capacity_root=BATTERY_CAPACITY_ROOT,
+            condition_workbook=BATTERY_CONDITION_WORKBOOK,
+            condition_sheet=DEFAULT_CONDITION_SHEET,
+            eis_match_override_path=BATTERY_MATCH_EIS_JSON,
+            capacity_match_override_path=BATTERY_MATCH_CAPACITY_JSON,
+        )
+    except FileNotFoundError:
+        return jsonify({"ok": False, "error": "Draft manifest not found."}), 404
+    except (KeyError, ValueError, OSError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    response = _import_draft_payload(manifest)
+    response["queued_jobs"] = queue_import_rebuild_jobs(manifest)
+    return jsonify({"ok": True, **response})
+
+
+@blueprint.route("/api/capacity/csv-wrd-audit", methods=["GET", "POST"])
+def capacity_csv_wrd_audit_api():
+    try:
+        payload = audit_capacity_csv_wrd_pairs(BATTERY_CAPACITY_ROOT, BATTERY_OUTPUT_ROOT)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    return jsonify(payload)
+
+
+def queue_import_rebuild_jobs(manifest) -> list[dict]:
+    if not job_system_available():
+        return []
+    affected = {str(row.get("kind") or "") for row in (manifest.match_overrides or [])}
+    jobs = []
+    for kind, job_type in (("eis", "build_eis_graphs"), ("capacity", "build_capacity_graphs")):
+        if kind not in affected:
+            continue
+        try:
+            job = create_job(
+                job_type,
+                target=kind,
+                params={
+                    "recursive": True,
+                    "skip_existing": False,
+                    "force_rebuild": False,
+                    "write_raw_wrd": kind == "capacity",
+                    "condition_path": str(BATTERY_CONDITION_WORKBOOK),
+                    "condition_sheet": DEFAULT_CONDITION_SHEET,
+                    "source": "import_commit",
+                    "draft_id": manifest.draft_id,
+                    "journal_row": manifest.journal_row,
+                },
+                created_by="import_wizard",
+            )
+        except Exception as exc:
+            jobs.append({"job_type": job_type, "target": kind, "queued": False, "error": str(exc)})
+            continue
+        start_job_async(job["id"])
+        jobs.append({"job_type": job_type, "target": kind, "queued": True, "job": job})
+    return jobs
 
 
 def _analysis_artifacts(analysis: str, limit: int = 400) -> list[dict]:
@@ -201,7 +445,7 @@ def index():
     legacy_tab = request.args.get("tab")
     if legacy_tab:
         route_map = {
-            "dashboard": "battery_lab.index",
+            "dashboard": "battery_lab.journal",
             "journal": "battery_lab.journal",
             "files": "battery_lab.files",
             "eis": "battery_lab.eis",
@@ -219,7 +463,7 @@ def index():
     return render_template(
         "battery_lab/app.html",
         layout_template=current_app.config.get("BATTERY_LAB_LAYOUT_TEMPLATE", "battery_lab/standalone.html"),
-        **_app_context("dashboard"),
+        **_app_context("journal"),
     )
 
 
@@ -251,10 +495,36 @@ def journal_excel():
     return Response(html, mimetype="text/html")
 
 
+@blueprint.route("/journal/download", methods=["GET"])
+def journal_download():
+    """Download the current condition workbook as an .xlsx file.
+
+    Journal edits and newly registered experiments are saved straight to the
+    on-disk workbook (see WorkbookStore.update_cell / append_journal_row), so the
+    file served here always reflects the latest journal state.
+    """
+    wb_path = BATTERY_CONDITION_WORKBOOK
+    if not wb_path.is_file():
+        return jsonify({"ok": False, "error": "workbook not found", "path": str(wb_path)}), 404
+    return send_file(
+        wb_path,
+        as_attachment=True,
+        download_name="Cell condition Calculation.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 @blueprint.route("/api/journal/sheet", methods=["GET"])
 def journal_sheet_api():
     try:
-        return jsonify(_journal_store().sheet_payload())
+        include_ignored = request.args.get("filter", "all").strip().lower() not in {"hide", "matched"}
+        return jsonify(
+            _journal_store().sheet_payload(
+                include_ignored=include_ignored,
+                row_limit=parse_positive_int(request.args.get("limit")),
+                extra_rows=parse_positive_int(request.args.get("extra"), default=100),
+            )
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -407,11 +677,7 @@ def review_eis_capacity():
 
 @blueprint.route("/jobs")
 def jobs():
-    return render_template(
-        "battery_lab/app.html",
-        layout_template=current_app.config.get("BATTERY_LAB_LAYOUT_TEMPLATE", "battery_lab/standalone.html"),
-        **_app_context("jobs"),
-    )
+    return redirect(url_for("battery_lab.eis"))
 
 
 @blueprint.route("/settings")

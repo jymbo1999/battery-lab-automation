@@ -28,6 +28,26 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 
+# Electrode geometry for specific-capacity normalization.
+# 12 mm disc electrode -> radius r = 0.6 cm, area A = pi * r**2 ~= 1.13097 cm^2.
+# Defined once here so the literal is not repeated across callers.
+ELECTRODE_AREA_CM2 = math.pi * 0.6 ** 2
+
+
+def mass_g_from_areal_density(areal_mass_density_mg_cm2: float | None) -> float | None:
+    """Active-material mass in grams from areal mass density (mg/cm^2).
+
+        mass_g = areal_mass_density * ELECTRODE_AREA_CM2 / 1000
+
+    Returns ``None`` when the input is missing or non-positive so callers fall
+    back to absolute-mAh-only summaries. See ``build_capacity_summary`` for how
+    ``mass_g`` is consumed.
+    """
+    if not areal_mass_density_mg_cm2 or areal_mass_density_mg_cm2 <= 0:
+        return None
+    return areal_mass_density_mg_cm2 * ELECTRODE_AREA_CM2 / 1000.0
+
+
 @dataclass(frozen=True)
 class WrdRecord:
     offset: int
@@ -270,6 +290,27 @@ def build_capacity_summary(records: list[WrdRecord], mass_g: float | None = None
 
     Confirmed capacity unit:
       raw Ah * 1000 -> official mAh
+
+    Specific-capacity normalization (mAh -> mAh/g):
+      When ``mass_g`` (active-material mass in grams) is given, this also emits
+      ``Q_*_mAh_g = Q_*_mAh / mass_g``. Without ``mass_g`` only absolute mAh is
+      produced.
+
+      Why this matters: the official "_Capacity.csv" exports we historically
+      matched against were ALREADY specific capacity (mAh/g), while a raw WRD
+      summary is absolute mAh. The two therefore differ purely by the constant
+      ``mass_g`` factor (coulombic efficiency, being a ratio, is identical both
+      ways). Empirically confirmed on cell 471: WRD/CSV ratio was a constant
+      0.0098629 g across every cycle.
+
+      ``mass_g`` is derived from the journal experiment info, not from the WRD:
+        electrode area A = ELECTRODE_AREA_CM2 = pi * r**2, r = 0.6 cm -> ~1.13097 cm^2
+        mass_g = mass_g_from_areal_density(areal_mass_density mg/cm^2)
+               = areal_mass_density * ELECTRODE_AREA_CM2 / 1000
+      (cell 471: areal 8.72 mg/cm^2 * 1.13097 / 1000 = 0.0098629 g, matches above.)
+      See battery_lab.ui.build_analysis_artifacts (the build_capacity_graphs
+      rebuild path) for where areal_mass_density -> mass_g is wired once the
+      experiment info is known.
     """
     grouped: dict[int, list[WrdRecord]] = {}
     for r in records:

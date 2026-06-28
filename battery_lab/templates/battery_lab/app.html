@@ -28,12 +28,23 @@
   .battery-panel-head { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; margin-bottom: 12px; }
   .battery-panel-head h2 { margin-bottom: 4px; }
   .battery-muted { color: #697486; font-size: 13px; }
+  .battery-legend { font-size: 12px; color: #4a5568; line-height: 1.55; margin: 12px 0 0; padding: 10px 12px; background: #f7f8fa; border: 1px solid #e2e8f0; border-radius: 8px; }
+  .battery-legend h4 { margin: 8px 0 2px; font-size: 12px; color: #2d3748; font-weight: 700; }
+  .battery-legend h4:first-child { margin-top: 0; }
+  .battery-legend .row { margin: 1px 0; }
+  .battery-legend b { color: #2d3748; }
+  .battery-legend code { background: #eef1f5; border-radius: 4px; padding: 1px 4px; }
   .battery-status { width: 100%; border-collapse: collapse; font-size: 13px; }
   .battery-status th, .battery-status td { border: 1px solid #d8dee8; padding: 7px; text-align: left; vertical-align: top; }
   .battery-ok { color: #0f766e; font-weight: 700; }
   .battery-miss { color: #b42318; font-weight: 700; }
   .battery-frame { width: 100%; min-height: 760px; border: 1px solid #d8dee8; border-radius: 8px; background: #fff; }
   .battery-journal-frame { width: 100%; height: 820px; border: 1px solid #d8dee8; border-radius: 8px; background: #fff; }
+  .battery-page-journal { height: 100vh; min-height: 100vh; overflow: hidden; }
+  .battery-page-journal .battery-main { height: 100vh; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: 16px; }
+  .battery-page-journal .battery-panel.journal-panel { min-height: 0; flex: 1; display: flex; flex-direction: column; margin-bottom: 0; }
+  .battery-page-journal .battery-journal-frame { min-height: 0; flex: 1; height: auto; }
+  .battery-page-journal .battery-path-status { display: none; }
   .battery-graph-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-bottom: 12px; }
   .battery-select { width: 100%; min-height: 36px; border: 1px solid #a8b3c2; border-radius: 7px; background: #fff; color: #202733; padding: 6px 9px; }
   .battery-graph-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
@@ -43,6 +54,7 @@
   .battery-preview-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 8px; font-size: 13px; }
   .battery-svg-frame { width: 100%; height: 720px; border: 1px solid #d8dee8; border-radius: 8px; background: #fff; }
   .battery-live-controls { display: grid; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr) auto auto; gap: 8px; align-items: center; margin: 10px 0 12px; }
+  .battery-live-viewer .battery-select[data-role="selection"] { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
   .battery-toggle-label { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 0 8px; border: 1px solid #d8dee8; border-radius: 7px; background: #fff; font-size: 13px; white-space: nowrap; }
   .battery-live-frame { width: 100%; height: 720px; border: 1px solid #d8dee8; border-radius: 8px; background: #fff; }
   .battery-live-meta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 420px); gap: 12px; align-items: start; }
@@ -58,6 +70,60 @@
   .battery-checks label { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 0 9px; border: 1px solid #d8dee8; border-radius: 7px; background: #fff; font-size: 13px; color: #354052; }
   .battery-action-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
   .battery-empty { color: #697486; padding: 28px; background: #f8fafc; border: 1px dashed #bdc7d5; border-radius: 8px; }
+  .battery-import-wizard { display: none; border: 1px solid #c7d2fe; background: #f8fbff; border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+  .battery-import-wizard.open {
+    display: block;
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(960px, 94vw);
+    max-height: 90vh;
+    overflow-y: auto;
+    margin: 0;
+    padding: 22px 22px 18px;
+    z-index: 1000;
+    box-shadow: 0 18px 50px rgba(15, 23, 42, 0.35), 0 0 0 100vmax rgba(15, 23, 42, 0.5);
+  }
+  .battery-wizard-close { position: absolute; top: 12px; right: 14px; width: 30px; height: 30px; border: none; border-radius: 6px; background: #eef1f5; color: #374151; font-size: 18px; line-height: 1; cursor: pointer; }
+  .battery-wizard-close:hover { background: #e2e8f0; }
+  .battery-import-options { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }
+  .battery-import-options label { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; font-size: 13px; color: #354052; }
+  .battery-import-errors { margin-top: 10px; color: #991b1b; font-size: 13px; }
+  .biw-steps { display: flex; gap: 8px; flex-wrap: wrap; margin: 2px 0 16px; }
+  .biw-step { font-size: 12px; padding: 4px 11px; border-radius: 999px; background: #eef1f5; color: #64748b; }
+  .biw-step.active { background: #dbeafe; color: #1d4ed8; }
+  .biw-step.done { background: #dcfce7; color: #166534; }
+  .biw-dropzone { width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; border: 2px dashed #a8b3c2; border-radius: 12px; background: #f8fbff; color: #475569; font-size: 15px; padding: 26px 16px; cursor: pointer; }
+  .biw-dropzone:hover, .biw-dropzone.drag-over { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; }
+  .biw-filelist { display: grid; gap: 8px; margin-top: 12px; }
+  .biw-file-row { display: flex; align-items: center; gap: 12px; border: 1px solid #d8dee8; border-radius: 8px; background: #fff; padding: 10px 12px; }
+  .biw-file-main { min-width: 0; flex: 1; }
+  .biw-file-name { font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+  .biw-file-auto { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+  .biw-file-row select { min-width: 160px; min-height: 34px; border: 1px solid #a8b3c2; border-radius: 7px; background: #fff; color: #202733; padding: 5px 8px; }
+  .biw-del { flex: none; width: 30px; height: 30px; border: none; border-radius: 6px; background: transparent; color: #94a3b8; font-size: 18px; line-height: 1; cursor: pointer; }
+  .biw-del:hover { background: #fee2e2; color: #b91c1c; }
+  .biw-addmore { background: none; border: none; color: #2563eb; font-size: 13px; cursor: pointer; padding: 8px 2px; margin-top: 2px; }
+  .biw-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  .biw-footer .biw-spacer { margin-right: auto; }
+  .biw-preview { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; margin-bottom: 8px; }
+  .biw-box { border: 1px solid #d8dee8; border-radius: 12px; background: #fff; padding: 12px; overflow: hidden; }
+  .biw-box h4 { margin: 0 0 6px; font-size: 14px; }
+  .biw-frame { width: 100%; height: 320px; border: 1px solid #e5e9f0; border-radius: 6px; background: #fff; margin-top: 8px; }
+  .biw-box .biw-empty { font-size: 12px; color: #94a3b8; padding: 18px 0; text-align: center; }
+  .biw-metrics { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .biw-chip { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: #f1f5f9; color: #475569; }
+  .biw-section-title { font-size: 15px; font-weight: 600; margin: 14px 0 8px; }
+  .battery-metadata-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .battery-metadata-grid label { display: grid; gap: 5px; font-size: 12px; color: #526071; }
+  .battery-metadata-grid input { width: 100%; min-height: 34px; border: 1px solid #a8b3c2; border-radius: 7px; padding: 5px 8px; }
+  .biw-confirm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 8px 0 12px; }
+  .biw-kv { border: 1px solid #e5e9f0; border-radius: 8px; padding: 8px 10px; }
+  .biw-kv dt { font-size: 11px; color: #94a3b8; }
+  .biw-kv dd { margin: 2px 0 0; font-size: 13px; overflow-wrap: anywhere; }
+  .biw-confirm-files { display: grid; gap: 6px; }
+  .biw-confirm-file { display: flex; align-items: center; gap: 10px; border: 1px solid #e5e9f0; border-radius: 8px; padding: 7px 10px; font-size: 12px; }
+  .biw-cf-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; min-width: 0; flex: 1; }
   .battery-match-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 12px; }
   .battery-pill { background: #eef1f5; border: 1px solid #d8dee8; border-radius: 999px; padding: 5px 9px; font-size: 12px; color: #354052; }
   .battery-match-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -94,7 +160,7 @@
   @media (max-width: 900px) {
     .battery-app { grid-template-columns: 1fr; }
     .battery-side { position: static; height: auto; }
-    .battery-grid, .battery-graph-layout, .battery-graph-toolbar, .battery-live-controls, .battery-live-meta, .battery-action-grid { grid-template-columns: 1fr; }
+    .battery-grid, .battery-graph-layout, .battery-graph-toolbar, .battery-live-controls, .battery-live-meta, .battery-action-grid, .biw-preview, .battery-metadata-grid { grid-template-columns: 1fr; }
     .battery-head { display: block; }
     .battery-actions { justify-content: flex-start; margin-top: 12px; }
   }
@@ -102,18 +168,15 @@
 {% endblock stylesheets %}
 
 {% block content %}
-<main class="battery-app">
+<main class="battery-app battery-page-{{ page }}">
   <aside class="battery-side">
     <div class="battery-brand">Battery Lab</div>
     <nav class="battery-nav">
-      <a class="{% if page == 'dashboard' %}active{% endif %}" href="{{ url_for('battery_lab.index') }}">대시보드</a>
       <a class="{% if page == 'journal' %}active{% endif %}" href="{{ url_for('battery_lab.journal') }}">실험 일지</a>
-      <a class="{% if page == 'files' %}active{% endif %}" href="{{ url_for('battery_lab.files') }}">데이터 브라우저</a>
       <div class="battery-nav-label">분석</div>
       <a class="{% if page == 'eis' %}active{% endif %}" href="{{ url_for('battery_lab.eis') }}">EIS</a>
       <a class="{% if page == 'capacity' %}active{% endif %}" href="{{ url_for('battery_lab.capacity') }}">Capacity</a>
       <div class="battery-nav-label">운영</div>
-      <a class="{% if page == 'jobs' %}active{% endif %}" href="{{ url_for('battery_lab.jobs') }}">Jobs</a>
       <a class="{% if page == 'settings' %}active{% endif %}" href="{{ url_for('battery_lab.settings') }}">Settings</a>
     </nav>
   </aside>
@@ -121,24 +184,26 @@
   <section class="battery-main">
     <header class="battery-head">
       <div>
-        <h1>배터리 실험 자동 정리</h1>
-        <p>Render Persistent Disk의 원본 데이터와 산출 그래프를 직접 표시합니다.</p>
       </div>
       <div class="battery-actions">
         {% if streamlit_url %}
         <a class="battery-btn primary" href="{{ streamlit_url }}" target="_blank" rel="noreferrer">Streamlit 열기</a>
         {% endif %}
+        {% if page == 'settings' %}
         <a class="battery-btn" href="{{ url_for('battery_lab.status') }}">연결 상태</a>
         <a class="battery-btn" href="{{ url_for('battery_lab.health') }}">Health JSON</a>
+        {% endif %}
       </div>
     </header>
 
+    {% if page == 'settings' %}
     <div class="battery-grid">
       <div class="battery-stat"><span>EIS source files</span><strong>{{ summary.eis_sources }}</strong></div>
       <div class="battery-stat"><span>Capacity source files</span><strong>{{ summary.capacity_sources }}</strong></div>
       <div class="battery-stat"><span>EIS graphs</span><strong>{{ summary.eis_artifacts }}</strong></div>
       <div class="battery-stat"><span>Capacity graphs</span><strong>{{ summary.capacity_artifacts }}</strong></div>
     </div>
+    {% endif %}
 
     {% if page == 'dashboard' %}
       <section class="battery-panel">
@@ -162,8 +227,7 @@
       <section class="battery-panel">
         <div class="battery-panel-head">
           <div>
-            <h2>원본 EIS 라이브 뷰어</h2>
-            <div class="battery-muted">Streamlit 원본처럼 source graph, time-series group, comparison cluster를 바로 overlay합니다. 그래프는 휠/버튼 zoom, 드래그 pan, 표 row 토글을 지원합니다.</div>
+            <h2>Live Viewer</h2>
           </div>
         </div>
         <div class="battery-live-viewer" data-kind="eis" data-options-url="{{ url_for('battery_lab.eis_viewer_options_api') }}" data-overlay-url="{{ url_for('battery_lab.eis_viewer_overlay_api') }}">
@@ -181,94 +245,16 @@
           <iframe class="battery-live-frame" data-role="frame" sandbox="allow-scripts" title="EIS live overlay"></iframe>
           <div class="battery-live-meta">
             <div class="battery-match-message" data-role="message">불러오는 중...</div>
-            <div class="battery-live-table" data-role="table"></div>
           </div>
         </div>
-      </section>
-
-      <section class="battery-panel">
-        <div class="battery-panel-head">
-          <div>
-            <h2>그래프 산출물 생성/갱신</h2>
-            <div class="battery-muted">Streamlit 작업 액션을 Flask에서는 <code>battery_jobs</code>로 등록하고 백그라운드에서 실행합니다.</div>
-          </div>
-          <a class="battery-btn" href="{{ url_for('battery_lab.jobs') }}">Jobs</a>
-        </div>
-        <div class="battery-job-launcher" data-job-api="{{ url_for('battery_lab.jobs_api') }}" data-target="eis">
-          <div class="battery-action-grid">
-            <label class="battery-field">처리 개수 제한<input type="number" min="1" step="1" data-param="limit" placeholder="전체"></label>
-            <label class="battery-field">조건표<input type="text" data-param="condition_path" value="{{ status.condition_workbook.path }}"></label>
-            <label class="battery-field">조건표 sheet<input type="text" data-param="condition_sheet" value="{{ condition_sheet }}"></label>
-          </div>
-          <div class="battery-checks">
-            <label><input type="checkbox" data-param="recursive" checked>하위 폴더 포함</label>
-            <label><input type="checkbox" data-param="skip_existing" checked>이미 생성된 artifact 건너뛰기</label>
-            <label><input type="checkbox" data-param="force_rebuild">강제 재생성</label>
-          </div>
-          <div class="battery-action-buttons">
-            <button class="battery-btn primary" type="button" data-job-type="build_eis_graphs">그래프 다시 만들기</button>
-            <button class="battery-btn" type="button" data-job-type="eis_fitting_batch">EIS fitting batch</button>
-            <button class="battery-btn" type="button" data-job-type="rescan_files">파일 재스캔</button>
-          </div>
-          <div class="battery-match-message" data-role="message">대기 중</div>
-        </div>
-      </section>
-
-      <section class="battery-panel">
-        <div class="battery-panel-head">
-          <div>
-            <h2>원본 EIS 데이터 브라우저</h2>
-            <div class="battery-muted">Streamlit의 column finder를 그대로 표시합니다.</div>
-          </div>
-        </div>
-        <iframe class="battery-finder-frame" src="{{ url_for('battery_lab.eis_finder_api') }}" title="EIS data browser"></iframe>
-      </section>
-
-      <section class="battery-panel">
-        <div class="battery-panel-head">
-          <div>
-            <h2>EIS 산출 그래프 보기</h2>
-            <div class="battery-muted">이미 생성된 SVG/PNG artifact를 개별 파일 단위로 확인합니다.</div>
-          </div>
-          <a class="battery-btn" href="{{ url_for('battery_lab.files') }}">원본 폴더</a>
-        </div>
-        {% if eis_artifacts %}
-        <form class="battery-graph-toolbar" method="get" action="{{ url_for('battery_lab.eis') }}">
-          <select class="battery-select" name="graph" aria-label="EIS graph">
-            {% for artifact in eis_artifacts %}
-            <option value="{{ artifact.relative_path }}" {% if artifact.relative_path == selected_eis %}selected{% endif %}>{{ artifact.name }}</option>
-            {% endfor %}
-          </select>
-          <button class="battery-btn primary" type="submit">그래프 보기</button>
-        </form>
-        <div class="battery-graph-layout">
-          <div class="battery-select-list">
-            {% for artifact in eis_artifacts %}
-            <a class="{% if artifact.relative_path == selected_eis %}active{% endif %}" href="{{ url_for('battery_lab.eis', graph=artifact.relative_path) }}">{{ artifact.name }}</a>
-            {% endfor %}
-          </div>
-          <div>
-            {% if selected_eis_artifact %}
-            <div class="battery-preview-head">
-              <strong>{{ selected_eis_artifact.name }}</strong>
-              <a class="battery-btn" href="{{ selected_eis_artifact.url }}" target="_blank" rel="noreferrer">새 창</a>
-            </div>
-            <iframe class="battery-svg-frame" src="{{ selected_eis_artifact.url }}" title="{{ selected_eis_artifact.name }}"></iframe>
-            {% endif %}
-          </div>
-        </div>
-        {% else %}
-        <div class="battery-empty">EIS 그래프 산출물이 없습니다. <code>{{ output_root }}/eis</code>를 확인하세요.</div>
-        {% endif %}
-      </section>
-
-      <section class="battery-panel">
-        <div class="battery-panel-head">
-          <div>
-            <h2>EIS 수동 매칭</h2>
-            <div class="battery-muted">EIS/Capacity 매칭 검토는 전용 페이지에서 1차 후보 선택, 미선택 파일 정리, 최종 검토 순서로 처리합니다.</div>
-          </div>
-          <a class="battery-btn primary" href="{{ url_for('battery_lab.review_eis_capacity') }}">매칭 검토 열기</a>
+        <div class="battery-legend">
+          <h4>표 열 설명</h4>
+          <div class="row"><b>Graph</b> · 셀 이름 (범례 색 = Areal 로딩)</div>
+          <div class="row"><b>Areal</b> · 면적당 활물질 로딩 (mg/cm²)</div>
+          <div class="row"><b>Rs</b> · 용액 저항 (Ω) — Nyquist 고주파 절편</div>
+          <div class="row"><b>Rct</b> · 전하전달 저항 (Ω) — 반원 지름</div>
+          <div class="row"><b>날짜</b> · 실험일지 기준 측정일</div>
+          <div class="row"><b>전해질 / Binder / Voltage / ratio</b> · 셀 조건 (전해질, 바인더, 전압 범위, 조성비)</div>
         </div>
       </section>
 
@@ -276,15 +262,16 @@
       <section class="battery-panel">
         <div class="battery-panel-head">
           <div>
-            <h2>원본 Capacity 라이브 뷰어</h2>
-            <div class="battery-muted">Streamlit 원본처럼 protocol cluster 또는 단일 source를 overlay합니다. 그래프 표 row를 클릭/드래그해서 일부 곡선만 켜고 끌 수 있습니다.</div>
+            <h2>Live Viewer</h2>
           </div>
         </div>
         <div class="battery-live-viewer" data-kind="capacity" data-options-url="{{ url_for('battery_lab.capacity_viewer_options_api') }}" data-overlay-url="{{ url_for('battery_lab.capacity_viewer_overlay_api') }}" data-source-url="{{ url_for('battery_lab.capacity_viewer_source_api') }}">
           <div class="battery-match-summary" data-role="summary"></div>
           <div class="battery-live-controls">
             <select class="battery-select" data-role="mode" aria-label="Capacity viewer mode">
-              <option value="cluster">Protocol cluster</option>
+              <option value="type_1_0p1c_continuous">1) 0.1C continuous</option>
+              <option value="type_2_0p5c_after_stabilization">2) 안정화후 0.5C</option>
+              <option value="type_3_rate_performance">3) rate performance</option>
               <option value="source">Summary source overlay</option>
               <option value="raw_source">WRD/raw source preview</option>
             </select>
@@ -295,94 +282,18 @@
           <iframe class="battery-live-frame" data-role="frame" sandbox="allow-scripts" title="Capacity live overlay"></iframe>
           <div class="battery-live-meta">
             <div class="battery-match-message" data-role="message">불러오는 중...</div>
-            <div class="battery-live-table" data-role="table"></div>
           </div>
         </div>
-      </section>
-
-      <section class="battery-panel">
-        <div class="battery-panel-head">
-          <div>
-            <h2>그래프 산출물 생성/갱신</h2>
-            <div class="battery-muted">Streamlit 작업 액션을 Flask에서는 <code>battery_jobs</code>로 등록하고 백그라운드에서 실행합니다.</div>
-          </div>
-          <a class="battery-btn" href="{{ url_for('battery_lab.jobs') }}">Jobs</a>
-        </div>
-        <div class="battery-job-launcher" data-job-api="{{ url_for('battery_lab.jobs_api') }}" data-target="capacity">
-          <div class="battery-action-grid">
-            <label class="battery-field">처리 개수 제한<input type="number" min="1" step="1" data-param="limit" placeholder="전체"></label>
-            <label class="battery-field">조건표<input type="text" data-param="condition_path" value="{{ status.condition_workbook.path }}"></label>
-            <label class="battery-field">조건표 sheet<input type="text" data-param="condition_sheet" value="{{ condition_sheet }}"></label>
-          </div>
-          <div class="battery-checks">
-            <label><input type="checkbox" data-param="recursive" checked>하위 폴더 포함</label>
-            <label><input type="checkbox" data-param="skip_existing" checked>이미 생성된 artifact 건너뛰기</label>
-            <label><input type="checkbox" data-param="force_rebuild">강제 재생성</label>
-            <label><input type="checkbox" data-param="write_raw_wrd">WRD raw time-series CSV 저장</label>
-          </div>
-          <div class="battery-action-buttons">
-            <button class="battery-btn primary" type="button" data-job-type="build_capacity_graphs">그래프 다시 만들기</button>
-            <button class="battery-btn" type="button" data-job-type="rescan_files">파일 재스캔</button>
-          </div>
-          <div class="battery-match-message" data-role="message">대기 중</div>
-        </div>
-      </section>
-
-      <section class="battery-panel">
-        <div class="battery-panel-head">
-          <div>
-            <h2>원본 Capacity 데이터 브라우저</h2>
-            <div class="battery-muted">Streamlit의 column finder를 그대로 표시합니다.</div>
-          </div>
-        </div>
-        <iframe class="battery-finder-frame" src="{{ url_for('battery_lab.capacity_finder_api') }}" title="Capacity data browser"></iframe>
-      </section>
-
-      <section class="battery-panel">
-        <div class="battery-panel-head">
-          <div>
-            <h2>Capacity 산출 그래프 보기</h2>
-            <div class="battery-muted">이미 생성된 SVG/PNG artifact를 개별 파일 단위로 확인합니다.</div>
-          </div>
-          <a class="battery-btn" href="{{ url_for('battery_lab.files') }}">원본 폴더</a>
-        </div>
-        {% if capacity_artifacts %}
-        <form class="battery-graph-toolbar" method="get" action="{{ url_for('battery_lab.capacity') }}">
-          <select class="battery-select" name="graph" aria-label="Capacity graph">
-            {% for artifact in capacity_artifacts %}
-            <option value="{{ artifact.relative_path }}" {% if artifact.relative_path == selected_capacity %}selected{% endif %}>{{ artifact.name }}</option>
-            {% endfor %}
-          </select>
-          <button class="battery-btn primary" type="submit">그래프 보기</button>
-        </form>
-        <div class="battery-graph-layout">
-          <div class="battery-select-list">
-            {% for artifact in capacity_artifacts %}
-            <a class="{% if artifact.relative_path == selected_capacity %}active{% endif %}" href="{{ url_for('battery_lab.capacity', graph=artifact.relative_path) }}">{{ artifact.name }}</a>
-            {% endfor %}
-          </div>
-          <div>
-            {% if selected_capacity_artifact %}
-            <div class="battery-preview-head">
-              <strong>{{ selected_capacity_artifact.name }}</strong>
-              <a class="battery-btn" href="{{ selected_capacity_artifact.url }}" target="_blank" rel="noreferrer">새 창</a>
-            </div>
-            <iframe class="battery-svg-frame" src="{{ selected_capacity_artifact.url }}" title="{{ selected_capacity_artifact.name }}"></iframe>
-            {% endif %}
-          </div>
-        </div>
-        {% else %}
-        <div class="battery-empty">Capacity 그래프 산출물이 없습니다. <code>{{ output_root }}/capacity</code>를 확인하세요.</div>
-        {% endif %}
-      </section>
-
-      <section class="battery-panel">
-        <div class="battery-panel-head">
-          <div>
-            <h2>Capacity 수동 매칭</h2>
-            <div class="battery-muted">EIS/Capacity 매칭 검토는 전용 페이지에서 1차 후보 선택, 미선택 파일 정리, 최종 검토 순서로 처리합니다.</div>
-          </div>
-          <a class="battery-btn primary" href="{{ url_for('battery_lab.review_eis_capacity') }}">매칭 검토 열기</a>
+        <div class="battery-legend">
+          <h4>공통 열</h4>
+          <div class="row"><b>Graph</b> 셀 이름(범례 색=Areal) · <b>Areal</b> 면적당 로딩(mg/cm²) · <b>Density</b> 합제밀도(g/cm³) · <b>ICE</b> 초기 쿨롱효율(%) · <b>ΔV</b> 충·방전 전압차 지표 · <b>전해질·Binder·Voltage·ratio</b> 셀 조건</div>
+          <div class="row" style="margin-top:4px;color:#697486;">KPI는 방전용량 기준, %는 0~100 스케일. 계산 불가 값은 <code>—</code>. 모드(protocol)에 따라 아래 KPI 열이 바뀝니다.</div>
+          <h4>1) 0.1C continuous</h4>
+          <div class="row"><b>N</b> 유효 방전 사이클 수 · <b>Qd1</b> 1번째 방전용량 · <b>QdN</b> 마지막 방전용량(mAh/g) · <b>RetN</b> 유지율 QdN/Qd1(%) · <b>F/cyc</b> 사이클당 평균 감소율(%/cyc)</div>
+          <h4>2) 안정화후 0.5C</h4>
+          <div class="row"><b>N0.5</b> 0.5C 구간 사이클 수 · <b>Q0.1ref</b> 0.1C 기준용량(마지막 3개 평균) · <b>Q0.5i</b> 0.5C 전환 직후(처음 3개 평균) · <b>Drop0.5</b> 0.1C→0.5C 강하율(%) · <b>Q0.5N</b> 0.5C 마지막(마지막 3개 평균) · <b>Ret0.5</b> 0.5C 유지율 Q0.5N/Q0.5i(%) · <b>F0.5/cyc</b> 0.5C 사이클당 감소율(%/cyc)</div>
+          <h4>3) rate performance</h4>
+          <div class="row"><b>N</b> 전체 유효 방전 사이클 수 · <b>Q0.1·Q0.5·Q1·Q1.5·Q2</b> 각 C-rate 대표용량(구간 마지막 3개 평균, mAh/g) · <b>R2/0.1</b> 고율 성능 Q2/Q0.1(%) · <b>Rec0.5</b> 회복률 복귀 0.5C / 첫 0.5C(%)</div>
         </div>
       </section>
 
@@ -509,29 +420,6 @@
         {% endfor %}
       </section>
 
-    {% elif page == 'jobs' %}
-      <section class="battery-panel">
-        <div class="battery-panel-head">
-          <div>
-            <h2>Jobs</h2>
-            <div class="battery-muted">긴 작업은 request thread에서 직접 실행하지 않고 <code>battery_jobs</code>에 기록한 뒤 백그라운드 worker가 처리합니다.</div>
-          </div>
-        </div>
-        <div class="battery-jobs" data-api-url="{{ url_for('battery_lab.jobs_api') }}">
-          <div class="battery-match-summary" data-role="summary"></div>
-          <div class="battery-job-actions">
-            {% for job_type, label in job_types.items() %}
-            <button class="battery-btn" type="button" data-job-type="{{ job_type }}">{{ label }}</button>
-            {% endfor %}
-            <button class="battery-btn" type="button" data-role="reload">새로고침</button>
-          </div>
-          <div data-role="table"></div>
-          <div class="battery-match-message" data-role="message">
-            {% if job_db_available %}불러오는 중...{% else %}Job DB를 사용할 수 없습니다. Main Flask 앱의 SQLAlchemy DB에 연결된 환경에서 활성화됩니다.{% endif %}
-          </div>
-        </div>
-      </section>
-
     {% elif page == 'settings' %}
       <section class="battery-panel">
         <h2>Settings</h2>
@@ -547,6 +435,99 @@
             {% endfor %}
           </tbody>
         </table>
+      </section>
+
+      <section class="battery-panel">
+        <div class="battery-panel-head">
+          <div>
+            <h2>그래프 산출물 생성/갱신 — EIS</h2>
+            <div class="battery-muted">긴 작업은 <code>battery_jobs</code>로 등록하고 백그라운드에서 실행합니다. 아래에서 실행과 상태 확인을 함께 처리합니다.</div>
+          </div>
+          <button class="battery-btn" type="button" data-role="job-reload">최근 작업 새로고침</button>
+        </div>
+        <div class="battery-job-launcher" data-job-api="{{ url_for('battery_lab.jobs_api') }}" data-target="eis">
+          <div class="battery-action-grid">
+            <label class="battery-field">처리 개수 제한<input type="number" min="1" step="1" data-param="limit" placeholder="전체"></label>
+            <label class="battery-field">조건표<input type="text" data-param="condition_path" value="{{ status.condition_workbook.path }}"></label>
+            <label class="battery-field">조건표 sheet<input type="text" data-param="condition_sheet" value="{{ condition_sheet }}"></label>
+          </div>
+          <div class="battery-checks">
+            <label><input type="checkbox" data-param="recursive" checked>하위 폴더 포함</label>
+            <label><input type="checkbox" data-param="skip_existing" checked>이미 생성된 artifact 건너뛰기</label>
+            <label><input type="checkbox" data-param="force_rebuild">강제 재생성</label>
+          </div>
+          <div class="battery-action-buttons">
+            <button class="battery-btn primary" type="button" data-job-type="build_eis_graphs">그래프 다시 만들기</button>
+            <button class="battery-btn" type="button" data-job-type="eis_fitting_batch">EIS fitting batch</button>
+            <button class="battery-btn" type="button" data-job-type="rescan_files">파일 재스캔</button>
+          </div>
+          <div class="battery-match-message" data-role="message">대기 중</div>
+          <div class="battery-match-summary" data-role="summary"></div>
+          <div data-role="table"></div>
+        </div>
+      </section>
+
+      <section class="battery-panel">
+        <div class="battery-panel-head">
+          <div>
+            <h2>그래프 산출물 생성/갱신 — Capacity</h2>
+            <div class="battery-muted">긴 작업은 <code>battery_jobs</code>로 등록하고 백그라운드에서 실행합니다. 아래에서 실행과 상태 확인을 함께 처리합니다.</div>
+          </div>
+          <button class="battery-btn" type="button" data-role="job-reload">최근 작업 새로고침</button>
+        </div>
+        <div class="battery-job-launcher" data-job-api="{{ url_for('battery_lab.jobs_api') }}" data-target="capacity">
+          <div class="battery-action-grid">
+            <label class="battery-field">처리 개수 제한<input type="number" min="1" step="1" data-param="limit" placeholder="전체"></label>
+            <label class="battery-field">조건표<input type="text" data-param="condition_path" value="{{ status.condition_workbook.path }}"></label>
+            <label class="battery-field">조건표 sheet<input type="text" data-param="condition_sheet" value="{{ condition_sheet }}"></label>
+          </div>
+          <div class="battery-checks">
+            <label><input type="checkbox" data-param="recursive" checked>하위 폴더 포함</label>
+            <label><input type="checkbox" data-param="skip_existing" checked>이미 생성된 artifact 건너뛰기</label>
+            <label><input type="checkbox" data-param="force_rebuild">강제 재생성</label>
+            <label><input type="checkbox" data-param="write_raw_wrd">WRD raw time-series CSV 저장</label>
+          </div>
+          <div class="battery-action-buttons">
+            <button class="battery-btn primary" type="button" data-job-type="build_capacity_graphs">그래프 다시 만들기</button>
+            <button class="battery-btn" type="button" data-job-type="rescan_files">파일 재스캔</button>
+          </div>
+          <div class="battery-match-message" data-role="message">대기 중</div>
+          <div class="battery-match-summary" data-role="summary"></div>
+          <div data-role="table"></div>
+        </div>
+      </section>
+
+      <section class="battery-panel">
+        <div class="battery-panel-head">
+          <div>
+            <h2>운영 도구</h2>
+            <div class="battery-muted">평소 분석 탭에서는 숨기고, 필요할 때만 쓰는 백업/점검 기능입니다.</div>
+          </div>
+        </div>
+        <div class="battery-job-actions">
+          {% if report_url %}
+          <a class="battery-btn" href="{{ report_url }}" target="_blank" rel="noreferrer">HTML 리포트</a>
+          {% endif %}
+          {% if dashboard_url %}
+          <a class="battery-btn" href="{{ dashboard_url }}" target="_blank" rel="noreferrer">기존 대시보드 HTML</a>
+          {% endif %}
+          <a class="battery-btn" href="{{ url_for('battery_lab.files') }}">데이터 브라우저</a>
+          <a class="battery-btn" href="{{ url_for('battery_lab.review_eis_capacity') }}">매칭 검토</a>
+          <a class="battery-btn" href="{{ url_for('battery_lab.eis_finder_api') }}" target="_blank" rel="noreferrer">EIS column finder</a>
+          <a class="battery-btn" href="{{ url_for('battery_lab.capacity_finder_api') }}" target="_blank" rel="noreferrer">Capacity column finder</a>
+        </div>
+      </section>
+
+      <section class="battery-panel">
+        <div class="battery-panel-head">
+          <div>
+            <h2>Capacity CSV / WRD Audit</h2>
+            <div class="battery-muted">삭제하지 않고, WRD 재생성 summary와 공식 Capacity CSV가 같은지 비교해 archive 후보 리포트만 생성합니다.</div>
+          </div>
+          <button class="battery-btn primary" type="button" data-role="run-csv-wrd-audit" data-url="{{ url_for('battery_lab.capacity_csv_wrd_audit_api') }}">Audit 실행</button>
+        </div>
+        <div class="battery-match-summary" data-role="csv-wrd-audit-summary"></div>
+        <div class="battery-ai-output" data-role="csv-wrd-audit-output">아직 실행하지 않았습니다.</div>
       </section>
 
       <section class="battery-panel">
@@ -568,15 +549,83 @@
       </section>
 
     {% else %}
-      <section class="battery-panel">
+      <section class="battery-panel journal-panel">
         <div class="battery-panel-head">
           <div>
-            <h2>실험 일지</h2>
-            <div class="battery-muted"><code>{{ status.condition_workbook.path }}</code> / <code>{{ condition_sheet }}</code> 시트를 Excel처럼 직접 편집합니다.</div>
+            <h2 style="font-size: 1.5em;">실험 일지</h2>
           </div>
-          {% if status.condition_workbook.exists %}
-          <a class="battery-btn" href="{{ url_for('battery_lab.journal_excel') }}" target="_blank" rel="noreferrer">새 창</a>
-          {% endif %}
+          <div style="display: flex; gap: 8px; margin-left: auto;">
+            {% if status.condition_workbook.exists %}
+            <a class="battery-btn" href="{{ url_for('battery_lab.journal_excel') }}" target="_blank" rel="noreferrer">새 창에서 보기</a>
+            <a class="battery-btn" href="{{ url_for('battery_lab.journal_download') }}">.xlsx 내려받기</a>
+            {% endif %}
+            <button class="battery-btn primary" type="button" data-role="open-import-wizard">새 실험 등록</button>
+          </div>
+        </div>
+        <div class="battery-import-wizard" data-upload-url="{{ url_for('battery_lab.create_import_draft_api') }}" data-metadata-options-url="{{ url_for('battery_lab.import_metadata_options_api') }}">
+          <button class="battery-wizard-close" type="button" data-role="close-import-wizard" aria-label="닫기">&times;</button>
+          <input type="file" data-role="file-input" accept=".sde,.seo,.wrd,.csv,.xlsx,.xls" multiple hidden>
+          <div class="biw-steps">
+            <span class="biw-step active" data-step-pill="1">1 · 업로드 &amp; 분류</span>
+            <span class="biw-step" data-step-pill="2">2 · 미리보기 &amp; 실험정보</span>
+            <span class="biw-step" data-step-pill="3">3 · 확인 &amp; 저장</span>
+          </div>
+
+          <section class="biw-panel" data-step="1">
+            <button type="button" class="biw-dropzone" data-role="dropzone">
+              <span style="font-size:22px;line-height:1">＋</span> 파일 업로드 — 클릭 또는 드래그 (여러 개 가능)
+            </button>
+            <div class="biw-filelist" data-role="file-list"></div>
+            <button type="button" class="biw-addmore" data-role="add-more" hidden>＋ 파일 추가</button>
+            <div class="battery-import-options">
+              <label><input type="checkbox" data-role="write-raw" value="1"> WRD raw time-series CSV도 생성</label>
+            </div>
+            <div class="battery-match-message" data-role="upload-message">원본 파일을 올리면 파서·지표·미리보기를 만들고 타입을 자동 분류합니다. 각 파일 오른쪽에서 타입을 바꾸거나 ×로 삭제할 수 있습니다.</div>
+            <div class="battery-import-errors" data-role="import-errors"></div>
+            <div class="biw-footer">
+              <button class="battery-btn primary" type="button" data-role="goto-step2" disabled>실험정보 입력하기 →</button>
+            </div>
+          </section>
+
+          <section class="biw-panel" data-step="2" hidden>
+            <div class="biw-section-title">미리보기</div>
+            <div class="biw-preview" data-role="preview-boxes"></div>
+            <form data-role="metadata-form">
+              <div class="biw-section-title">실험정보 <span class="battery-muted" style="font-weight:400;font-size:12px">— 실험일지 한 행에 들어갈 한 세트</span></div>
+              <div class="battery-metadata-grid">
+                <label>date<input name="date" list="metadata-options-date" placeholder="260627" required></label>
+                <label>sample<input name="sample" list="metadata-options-sample" placeholder="sample / cell id" required></label>
+                <label>cell type<input name="cell_type" list="metadata-options-cell_type" placeholder="LIB" required></label>
+                <label>electrolyte<input name="electrolyte" list="metadata-options-electrolyte" required></label>
+                <label>binder<input name="binder" list="metadata-options-binder" required></label>
+                <label>voltage range<input name="voltage_range" list="metadata-options-voltage_range" required></label>
+                <label>ratio<input name="ratio" list="metadata-options-ratio" required></label>
+                <label>areal mass density<input name="areal_mass_density" list="metadata-options-areal_mass_density" required></label>
+                <label>sample group<input name="sample_group" list="metadata-options-sample_group"></label>
+                <label>material family<input name="material_family" list="metadata-options-material_family"></label>
+                <label>treatment<input name="treatment" list="metadata-options-treatment"></label>
+                <label>note<input name="note"></label>
+              </div>
+              <div data-role="metadata-datalists"></div>
+            </form>
+            <div class="battery-match-message" data-role="metadata-message">과거 조건값을 빠르게 선택할 수 있습니다.</div>
+            <div class="biw-footer">
+              <button class="battery-btn biw-spacer" type="button" data-role="back-step1">← 뒤로</button>
+              <button class="battery-btn primary" type="button" data-role="goto-step3">최종 확인 →</button>
+            </div>
+          </section>
+
+          <section class="biw-panel" data-step="3" hidden>
+            <div class="biw-section-title">실험일지에 추가될 새 행</div>
+            <div class="biw-confirm-grid" data-role="confirm-meta"></div>
+            <div class="biw-section-title">저장될 파일 (<span data-role="confirm-count">0</span>)</div>
+            <div class="biw-confirm-files" data-role="confirm-files"></div>
+            <div class="battery-match-message" data-role="commit-message">‘실험일지 xlsx에 저장하기’를 누르면 새 행 추가 + 파일 정리 저장 + 그래프/매칭 갱신이 함께 실행됩니다.</div>
+            <div class="biw-footer">
+              <button class="battery-btn biw-spacer" type="button" data-role="back-step2">← 뒤로</button>
+              <button class="battery-btn primary" type="button" data-role="commit-import-draft" disabled>실험일지 xlsx에 저장하기</button>
+            </div>
+          </section>
         </div>
         {% if status.condition_workbook.exists %}
         <iframe class="battery-journal-frame" src="{{ url_for('battery_lab.journal_excel') }}" title="Battery journal Excel editor"></iframe>
@@ -585,7 +634,7 @@
         {% endif %}
       </section>
 
-      <section class="battery-panel">
+      <section class="battery-panel battery-path-status">
         <h2>경로 상태</h2>
         <table class="battery-status">
           <thead><tr><th>Key</th><th>Path</th><th>Exists</th></tr></thead>
@@ -606,6 +655,366 @@
     {% endif %}
   </section>
 </main>
+<script>
+  (() => {
+    const wizard = document.querySelector(".battery-import-wizard");
+    if (!wizard) return;
+
+    const uploadUrl = wizard.dataset.uploadUrl;
+    const TYPE_OPTIONS = ["eis_comparison", "eis_time_series", "capacity_1", "capacity_2", "capacity_3"];
+    const assignmentLabels = {
+      eis_comparison: "EIS 비교클러스터",
+      eis_time_series: "EIS 시계열",
+      capacity_1: "Capacity 1",
+      capacity_2: "Capacity 2",
+      capacity_3: "Capacity 3",
+      exclude: "제외",
+    };
+    const clusterStatusLabels = {
+      matched_existing_cluster: "기존 조건 cluster와 매칭",
+      new_independent_cluster: "새 독립 cluster",
+      metadata_required: "실험정보 필요",
+      excluded: "제외",
+    };
+    const metadataFieldOrder = ["date", "sample", "cell_type", "electrolyte", "binder", "voltage_range", "ratio", "areal_mass_density", "sample_group", "material_family", "treatment", "note"];
+
+    const el = (role) => wizard.querySelector(`[data-role="${role}"]`);
+    const fileInput = el("file-input");
+    const dropzone = el("dropzone");
+    const fileList = el("file-list");
+    const addMore = el("add-more");
+    const writeRaw = el("write-raw");
+    const uploadMessage = el("upload-message");
+    const errors = el("import-errors");
+    const gotoStep2 = el("goto-step2");
+    const previewBoxes = el("preview-boxes");
+    const metadataForm = el("metadata-form");
+    const metadataDatalists = el("metadata-datalists");
+    const metadataMessage = el("metadata-message");
+    const gotoStep3 = el("goto-step3");
+    const confirmMeta = el("confirm-meta");
+    const confirmFiles = el("confirm-files");
+    const confirmCount = el("confirm-count");
+    const commitMessage = el("commit-message");
+    const commitButton = el("commit-import-draft");
+    const openButton = document.querySelector('[data-role="open-import-wizard"]');
+    const closeButtons = wizard.querySelectorAll('[data-role="close-import-wizard"]');
+
+    let currentPayload = null;
+    let clusterRows = {};
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+      }[char]));
+    }
+    function assignmentLabel(value) { return assignmentLabels[value] || value || "-"; }
+    function fileAssignment(file) { return file.assignment || file.suggested_assignment || "eis_comparison"; }
+
+    function showStep(n) {
+      wizard.querySelectorAll("[data-step]").forEach((panel) => { panel.hidden = Number(panel.dataset.step) !== n; });
+      wizard.querySelectorAll("[data-step-pill]").forEach((pill) => {
+        const s = Number(pill.dataset.stepPill);
+        pill.classList.toggle("active", s === n);
+        pill.classList.toggle("done", s < n);
+      });
+    }
+
+    async function loadMetadataOptions() {
+      if (wizard.__metadataOptionsLoaded) return;
+      wizard.__metadataOptionsLoaded = true;
+      try {
+        const response = await fetch(wizard.dataset.metadataOptionsUrl, {headers: {"Accept": "application/json"}});
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.ok) return;
+        metadataDatalists.innerHTML = Object.entries(payload.options || {}).map(([field, values]) => `
+          <datalist id="metadata-options-${escapeHtml(field)}">
+            ${(values || []).map((value) => `<option value="${escapeHtml(value)}"></option>`).join("")}
+          </datalist>`).join("");
+      } catch (error) { /* options are optional */ }
+    }
+
+    function collectMetadata() {
+      const metadata = {};
+      Array.from(metadataForm.elements).forEach((field) => {
+        if (!field.name) return;
+        const value = String(field.value || "").trim();
+        if (value) metadata[field.name] = value;
+      });
+      return metadata;
+    }
+    function fillMetadataForm(metadata) {
+      Object.entries(metadata || {}).forEach(([key, value]) => {
+        const input = metadataForm.elements[key];
+        if (input) input.value = value ?? "";
+      });
+    }
+
+    function renderFileList() {
+      const files = (currentPayload && currentPayload.files) || [];
+      fileList.innerHTML = files.map((file) => {
+        const current = fileAssignment(file);
+        const options = TYPE_OPTIONS.map((value) => `<option value="${value}" ${value === current ? "selected" : ""}>${escapeHtml(assignmentLabel(value))}</option>`).join("");
+        const reason = file.suggested_assignment ? `자동 감지: ${escapeHtml(assignmentLabel(file.suggested_assignment))}` : "타입을 선택하세요";
+        return `
+          <div class="biw-file-row" data-file-id="${escapeHtml(file.file_id)}">
+            <div class="biw-file-main">
+              <div class="biw-file-name">${escapeHtml(file.original_filename)}</div>
+              <div class="biw-file-auto">${reason}</div>
+            </div>
+            <select data-type-select aria-label="데이터 타입">${options}</select>
+            <button class="biw-del" type="button" data-del aria-label="삭제">&times;</button>
+          </div>`;
+      }).join("");
+      fileList.querySelectorAll(".biw-file-row").forEach((row) => {
+        const fileId = row.dataset.fileId;
+        row.querySelector("[data-type-select]").addEventListener("change", (event) => saveAssignment(fileId, event.target.value));
+        row.querySelector("[data-del]").addEventListener("click", () => deleteFile(fileId));
+      });
+      const hasFiles = files.length > 0;
+      addMore.hidden = !hasFiles;
+      gotoStep2.disabled = !hasFiles;
+      errors.textContent = ((currentPayload && currentPayload.errors) || []).join(" · ");
+      if (hasFiles) uploadMessage.textContent = `${files.length}개 파일 · 타입을 확인/수정하고 ‘실험정보 입력하기’로 진행하세요.`;
+    }
+
+    async function uploadFiles(fileObjs, {append}) {
+      const list = Array.from(fileObjs || []);
+      if (!list.length) return;
+      const body = new FormData();
+      list.forEach((file) => body.append("files", file));
+      if (writeRaw && writeRaw.checked) body.append("write_raw_wrd", "1");
+      uploadMessage.textContent = append ? "파일을 추가하고 분석하는 중..." : "업로드하고 파서·지표·미리보기를 만드는 중...";
+      const draftId = currentPayload && currentPayload.draft_id;
+      const url = (append && draftId) ? `${uploadUrl}/${encodeURIComponent(draftId)}/files` : uploadUrl;
+      try {
+        const response = await fetch(url, {method: "POST", headers: {"Accept": "application/json"}, body});
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) { uploadMessage.textContent = payload.error || "업로드에 실패했습니다."; return; }
+        currentPayload = payload;
+        renderFileList();
+      } catch (error) {
+        uploadMessage.textContent = "업로드 중 오류가 발생했습니다.";
+      }
+    }
+
+    async function saveAssignment(fileId, value) {
+      const draftId = currentPayload && currentPayload.draft_id;
+      if (!draftId) return;
+      try {
+        const response = await fetch(`${uploadUrl}/${encodeURIComponent(draftId)}/assignments`, {
+          method: "PATCH", headers: {"Content-Type": "application/json", "Accept": "application/json"},
+          body: JSON.stringify({assignments: {[fileId]: value}}),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (response.ok) currentPayload = payload;
+      } catch (error) { /* keep DOM choice */ }
+    }
+
+    async function deleteFile(fileId) {
+      const draftId = currentPayload && currentPayload.draft_id;
+      if (!draftId) return;
+      try {
+        const response = await fetch(`${uploadUrl}/${encodeURIComponent(draftId)}/files/${encodeURIComponent(fileId)}`, {
+          method: "DELETE", headers: {"Accept": "application/json"},
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) { uploadMessage.textContent = payload.error || "삭제에 실패했습니다."; return; }
+        currentPayload = payload;
+        renderFileList();
+      } catch (error) { uploadMessage.textContent = "삭제 중 오류가 발생했습니다."; }
+    }
+
+    function emptyFrame(message) {
+      return `<!doctype html><html><body style="margin:0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f8fafc;color:#647084;display:grid;place-items:center;height:100vh;font-size:13px;text-align:center;padding:12px;"><div>${escapeHtml(message)}</div></body></html>`;
+    }
+    function overlayDoc(html) {
+      return `<!doctype html><html><head><meta charset="utf-8"><style>
+        html, body { margin: 0; width: 100%; background: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        .eis-overlay-shell { display: flex !important; flex-direction: column !important; gap: 8px !important; width: 100% !important; height: auto !important; max-width: 100% !important; padding: 6px !important; box-sizing: border-box; }
+        .eis-overlay-shell > div:first-child { width: 100% !important; flex: none !important; min-width: 0 !important; }
+        .eis-overlay-shell > div:first-child svg { width: 100% !important; height: auto !important; display: block !important; }
+        .eis-overlay-shell > div:nth-child(2) { width: 100% !important; max-width: none !important; min-width: 0 !important; flex: none !important; height: auto !important; font-size: 11px !important; }
+        </style></head><body>${html}</body></html>`;
+    }
+
+    function renderPreview() {
+      const files = (currentPayload && currentPayload.files) || [];
+      const tsFiles = files.filter((f) => fileAssignment(f) === "eis_time_series");
+      previewBoxes.innerHTML = "";
+      files.forEach((file) => {
+        const assignment = fileAssignment(file);
+        if (assignment === "eis_time_series") return;
+        const kind = assignment.indexOf("capacity") === 0 ? "capacity" : "eis";
+        addPreviewBox(assignmentLabel(assignment), file.original_filename, [file.file_id], kind, "comparison");
+      });
+      if (tsFiles.length) {
+        addPreviewBox(`${assignmentLabel("eis_time_series")} · ${tsFiles.length} 시점`, tsFiles.map((f) => f.original_filename).join(", "), tsFiles.map((f) => f.file_id), "eis", "time_series");
+      }
+      if (!previewBoxes.children.length) previewBoxes.innerHTML = '<div class="biw-empty">파일이 없습니다.</div>';
+    }
+
+    function addPreviewBox(title, subtitle, fileIds, kind, colorMode) {
+      const box = document.createElement("div");
+      box.className = "biw-box";
+      box.innerHTML = `
+        <h4>${escapeHtml(title)}</h4>
+        <div class="biw-file-auto">${escapeHtml(subtitle)}</div>
+        <iframe class="biw-frame" title="${escapeHtml(title)} preview"></iframe>`;
+      previewBoxes.appendChild(box);
+      loadOverlayInto(box.querySelector("iframe"), fileIds, kind, colorMode, title);
+    }
+
+    async function loadOverlayInto(frame, fileIds, kind, colorMode, title) {
+      frame.onload = () => {
+        try {
+          const h = frame.contentDocument.body.scrollHeight;
+          if (h) frame.style.height = `${Math.min(Math.max(h, 240), 640)}px`;
+        } catch (error) { /* sizing is best-effort */ }
+      };
+      frame.srcdoc = emptyFrame("그래프 렌더링 중...");
+      const draftId = currentPayload && currentPayload.draft_id;
+      if (!draftId) return;
+      const params = new URLSearchParams({file_ids: fileIds.join(","), kind, color_mode: colorMode, title});
+      try {
+        const response = await fetch(`${uploadUrl}/${encodeURIComponent(draftId)}/overlay?${params.toString()}`, {headers: {"Accept": "application/json"}});
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.available) {
+          frame.srcdoc = emptyFrame((payload.errors || ["그래프를 만들 수 없습니다."])[0]);
+          return;
+        }
+        frame.srcdoc = overlayDoc(payload.html);
+      } catch (error) {
+        frame.srcdoc = emptyFrame("그래프 렌더링 오류");
+      }
+    }
+
+    async function loadClusterPreview() {
+      clusterRows = {};
+      const draftId = currentPayload && currentPayload.draft_id;
+      if (!draftId) return;
+      try {
+        const response = await fetch(`${uploadUrl}/${encodeURIComponent(draftId)}/cluster-preview`, {headers: {"Accept": "application/json"}});
+        const payload = await response.json().catch(() => ({}));
+        (payload.rows || []).forEach((row) => { if (row.filename) clusterRows[row.filename] = row; });
+      } catch (error) { /* status annotation is optional */ }
+    }
+
+    function renderConfirm() {
+      const metadata = (currentPayload && currentPayload.metadata) || {};
+      confirmMeta.innerHTML = metadataFieldOrder.filter((field) => metadata[field]).map((field) => `
+        <dl class="biw-kv"><dt>${escapeHtml(field)}</dt><dd>${escapeHtml(metadata[field])}</dd></dl>`).join("") || '<div class="biw-empty">실험정보가 없습니다.</div>';
+      const files = ((currentPayload && currentPayload.files) || []).filter((f) => fileAssignment(f) !== "exclude");
+      confirmCount.textContent = files.length;
+      confirmFiles.innerHTML = files.map((file) => {
+        const row = clusterRows[file.original_filename] || clusterRows[(file.raw_path || "").split("/").pop()];
+        const status = row ? (clusterStatusLabels[row.status] || row.status) : "";
+        return `
+          <div class="biw-confirm-file">
+            <span class="biw-cf-name">${escapeHtml(file.original_filename)}</span>
+            <span class="biw-chip">${escapeHtml(assignmentLabel(fileAssignment(file)))}</span>
+            ${status ? `<span class="biw-chip">${escapeHtml(status)}</span>` : ""}
+          </div>`;
+      }).join("") || '<div class="biw-empty">저장할 파일이 없습니다.</div>';
+    }
+
+    if (openButton) {
+      openButton.addEventListener("click", () => {
+        wizard.classList.add("open");
+        loadMetadataOptions();
+        showStep(1);
+        renderFileList();
+      });
+    }
+    const hasUnsavedWork = () => !!(currentPayload && (currentPayload.files || []).length && currentPayload.commit_status !== "committed");
+    const closeWizard = () => {
+      if (hasUnsavedWork() && !window.confirm("업로드 사항이 유실됩니다. 취소하겠습니까?")) return;
+      wizard.classList.remove("open");
+    };
+    closeButtons.forEach((button) => button.addEventListener("click", closeWizard));
+    document.addEventListener("keydown", (event) => { if (event.key === "Escape" && wizard.classList.contains("open")) closeWizard(); });
+
+    dropzone.addEventListener("click", () => fileInput.click());
+    addMore.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", () => {
+      const append = !!(currentPayload && currentPayload.draft_id);
+      uploadFiles(fileInput.files, {append}).finally(() => { fileInput.value = ""; });
+    });
+    ["dragover", "dragenter"].forEach((type) => dropzone.addEventListener(type, (event) => { event.preventDefault(); dropzone.classList.add("drag-over"); }));
+    ["dragleave", "dragend"].forEach((type) => dropzone.addEventListener(type, () => dropzone.classList.remove("drag-over")));
+    dropzone.addEventListener("drop", (event) => {
+      event.preventDefault();
+      dropzone.classList.remove("drag-over");
+      const append = !!(currentPayload && currentPayload.draft_id);
+      uploadFiles(event.dataTransfer.files, {append});
+    });
+
+    metadataForm.addEventListener("submit", (event) => event.preventDefault());
+    el("back-step1").addEventListener("click", () => showStep(1));
+    el("back-step2").addEventListener("click", () => showStep(2));
+
+    gotoStep2.addEventListener("click", () => {
+      if (!(currentPayload && currentPayload.files && currentPayload.files.length)) return;
+      fileList.querySelectorAll(".biw-file-row").forEach((row) => {
+        const file = currentPayload.files.find((item) => item.file_id === row.dataset.fileId);
+        const select = row.querySelector("[data-type-select]");
+        if (file && select) file.assignment = select.value;
+      });
+      renderPreview();
+      fillMetadataForm((currentPayload && currentPayload.metadata) || {});
+      showStep(2);
+    });
+
+    gotoStep3.addEventListener("click", async () => {
+      const draftId = currentPayload && currentPayload.draft_id;
+      if (!draftId) return;
+      metadataMessage.textContent = "실험정보를 저장하는 중...";
+      try {
+        const response = await fetch(`${uploadUrl}/${encodeURIComponent(draftId)}/metadata`, {
+          method: "PATCH", headers: {"Content-Type": "application/json", "Accept": "application/json"},
+          body: JSON.stringify({metadata: collectMetadata()}),
+        });
+        const payload = await response.json().catch(() => ({}));
+        currentPayload = payload;
+        if (!payload.ok || payload.metadata_status !== "ready") {
+          metadataMessage.textContent = `입력 확인 필요: ${(payload.metadata_errors || ["필수 항목을 채워주세요."]).join(" · ")}`;
+          return;
+        }
+        metadataMessage.textContent = "실험정보 저장됨.";
+        await loadClusterPreview();
+        renderConfirm();
+        commitButton.disabled = false;
+        commitMessage.textContent = "‘실험일지 xlsx에 저장하기’를 누르면 새 행 추가 + 파일 정리 저장 + 그래프/매칭 갱신이 함께 실행됩니다.";
+        showStep(3);
+      } catch (error) {
+        metadataMessage.textContent = "실험정보 저장 중 오류가 발생했습니다.";
+      }
+    });
+
+    commitButton.addEventListener("click", async () => {
+      const draftId = currentPayload && currentPayload.draft_id;
+      if (!draftId) return;
+      commitButton.disabled = true;
+      commitMessage.textContent = "실험일지에 저장하고 그래프/매칭을 갱신하는 중...";
+      try {
+        const response = await fetch(`${uploadUrl}/${encodeURIComponent(draftId)}/commit`, {method: "POST", headers: {"Accept": "application/json"}});
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          commitButton.disabled = false;
+          commitMessage.textContent = payload.error || "저장에 실패했습니다.";
+          return;
+        }
+        currentPayload = payload;
+        wizard.querySelectorAll("[data-step-pill]").forEach((pill) => pill.classList.add("done"));
+        commitMessage.textContent = `저장 완료 · 실험일지 row ${payload.journal_row || "-"} · 파일 ${(payload.saved_files || []).length}개. 새로고침합니다...`;
+        setTimeout(() => window.location.reload(), 1300);
+      } catch (error) {
+        commitButton.disabled = false;
+        commitMessage.textContent = "저장 중 오류가 발생했습니다.";
+      }
+    });
+  })();
+</script>
 <script>
   (() => {
     const viewers = Array.from(document.querySelectorAll(".battery-live-viewer"));
@@ -663,7 +1072,7 @@
       }
       if (mode === "raw_source") return payload.source_options || [];
       if (mode === "source") return payload.summary_options || [];
-      return payload.cluster_options || [];
+      return (payload.cluster_options || []).filter((option) => option.protocol_type === mode);
     }
 
     function populateSelection(viewer) {
@@ -686,22 +1095,25 @@
     }
 
     function renderSideTable(viewer, mode) {
-      const payload = viewer.__viewerPayload || {};
       const box = viewer.querySelector('[data-role="table"]');
+      if (!box) return;
+      const payload = viewer.__viewerPayload || {};
       let rows = [];
       let headers = [];
       if (viewer.dataset.kind === "eis" && mode === "time_series") {
-        headers = ["Group", "Sample", "Files", "Time points"];
-        rows = (payload.time_series_groups || []).map((row) => [row.cluster_id, row.condition_sample || row.cluster_signature, row.file_count, row.time_points]);
+        headers = ["Date", "Mode", "Type", "Voltage", "Ratio", "Files", "Details"];
+        rows = (payload.time_series_rows || []).map((row) => [row.Date, row.Mode, row["Cell type"], row.Voltage, row.Ratio, row.Files, row.Details]);
       } else if (viewer.dataset.kind === "eis") {
-        headers = ["Cluster", "Files", "Conditions", "Loading"];
-        rows = (payload.comparison_clusters || []).map((row) => [row.cluster_id, row.file_count, row.condition_count, `${row.loading_min ?? "?"}-${row.loading_max ?? "?"}`]);
+        headers = ["Date", "Mode", "Type", "Voltage", "Ratio", "Files", "Details"];
+        rows = (payload.comparison_rows || []).map((row) => [row.Date, row.Mode, row["Cell type"], row.Voltage, row.Ratio, row.Files, row.Details]);
       } else if (viewer.dataset.kind === "capacity" && mode === "raw_source") {
         headers = ["File", "Name"];
         rows = (payload.source_options || []).map((row) => [row.value, row.name || row.value]);
       } else {
-        headers = ["Cluster", "Type", "Files", "Rule"];
-        rows = (payload.cluster_rows || []).map((row) => [row.Cluster, row.Type, row.Files, row.Rule]);
+        headers = ["Date", "Protocol", "Type", "Voltage", "Ratio", "Files", "Details"];
+        rows = (payload.cluster_rows || [])
+          .filter((row) => row.protocol_type === mode)
+          .map((row) => [row.Date, row.Protocol, row["Cell type"], row.Voltage, row.Ratio, row.Files, row.Details]);
       }
       if (!rows.length) {
         box.innerHTML = '<div class="battery-empty">표시할 cluster 표가 없습니다.</div>';
@@ -847,6 +1259,70 @@
       launcher.querySelector('[data-role="message"]').textContent = text;
     }
 
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      }[char]));
+    }
+
+    function launcherJobTypes(launcher) {
+      return new Set(Array.from(launcher.querySelectorAll("[data-job-type]")).map((button) => button.dataset.jobType).filter(Boolean));
+    }
+
+    function renderJobSummary(launcher, payload) {
+      const summary = launcher.querySelector('[data-role="summary"]');
+      if (!summary) return;
+      summary.innerHTML = "";
+      const counts = payload.status_counts || {};
+      const items = [`job db ${payload.available ? "yes" : "no"}`].concat(
+        Object.keys(counts).sort().map((key) => `${key}: ${counts[key]}`)
+      );
+      items.forEach((item) => {
+        const pill = document.createElement("span");
+        pill.className = "battery-pill";
+        pill.textContent = item;
+        summary.appendChild(pill);
+      });
+    }
+
+    function renderJobs(launcher, jobs) {
+      const tableBox = launcher.querySelector('[data-role="table"]');
+      if (!tableBox) return;
+      const types = launcherJobTypes(launcher);
+      const visibleJobs = (jobs || []).filter((job) => types.has(job.job_type)).slice(0, 8);
+      if (!visibleJobs.length) {
+        tableBox.innerHTML = '<div class="battery-empty">이 섹션에서 등록한 최근 job이 없습니다.</div>';
+        return;
+      }
+      tableBox.innerHTML = `
+        <table class="battery-job-table">
+          <thead><tr><th>ID</th><th>Type</th><th>Status</th><th>Created</th><th>Updated</th><th>Error</th></tr></thead>
+          <tbody>${visibleJobs.map((job) => `
+            <tr>
+              <td>${job.id}</td>
+              <td>${escapeHtml(job.job_type_label || job.job_type)}</td>
+              <td><span class="battery-status-badge ${escapeHtml(job.status)}">${escapeHtml(job.status)}</span></td>
+              <td>${escapeHtml(job.created_at || "-")}</td>
+              <td>${escapeHtml(job.updated_at || "-")}</td>
+              <td>${escapeHtml(job.error_message || "")}</td>
+            </tr>
+          `).join("")}</tbody>
+        </table>`;
+    }
+
+    async function loadJobs(launcher, {quiet = false} = {}) {
+      if (!quiet) setMessage(launcher, "최근 job 상태를 불러오는 중...");
+      const response = await fetch(launcher.dataset.jobApi, {headers: {"Accept": "application/json"}});
+      const payload = await response.json().catch(() => ({}));
+      renderJobSummary(launcher, payload);
+      renderJobs(launcher, payload.jobs || []);
+      if (!quiet) setMessage(launcher, payload.available ? "최근 job 상태를 불러왔습니다." : "Job DB를 사용할 수 없습니다.");
+    }
+
     function collectParams(launcher) {
       const params = {};
       launcher.querySelectorAll("[data-param]").forEach((field) => {
@@ -886,12 +1362,19 @@
       }
       const job = payload.job || {};
       setMessage(launcher, `${job.status || "queued"} · #${job.id || "?"} · ${job.job_type_label || jobType}`);
+      await loadJobs(launcher, {quiet: true});
     }
 
     launchers.forEach((launcher) => {
+      const panel = launcher.closest(".battery-panel");
+      const reload = panel ? panel.querySelector('[data-role="job-reload"]') : null;
+      if (reload) {
+        reload.addEventListener("click", () => loadJobs(launcher).catch((error) => setMessage(launcher, error.message)));
+      }
       launcher.querySelectorAll("[data-job-type]").forEach((button) => {
         button.addEventListener("click", () => launchJob(launcher, button).catch((error) => setMessage(launcher, error.message)));
       });
+      loadJobs(launcher, {quiet: true}).catch((error) => setMessage(launcher, error.message));
     });
   })();
 </script>
@@ -1332,14 +1815,11 @@
 </script>
 <script>
   (() => {
-    const panel = document.querySelector(".battery-jobs");
-    if (!panel) return;
-    const apiUrl = panel.dataset.apiUrl;
-    const summary = panel.querySelector('[data-role="summary"]');
-    const tableBox = panel.querySelector('[data-role="table"]');
-    const message = panel.querySelector('[data-role="message"]');
+    const button = document.querySelector('[data-role="run-csv-wrd-audit"]');
+    if (!button) return;
+    const summary = document.querySelector('[data-role="csv-wrd-audit-summary"]');
+    const output = document.querySelector('[data-role="csv-wrd-audit-output"]');
 
-    function setMessage(text) { message.textContent = text; }
     function escapeHtml(value) {
       return String(value ?? "").replace(/[&<>"']/g, (char) => ({
         "&": "&amp;",
@@ -1349,68 +1829,32 @@
         "'": "&#39;",
       }[char]));
     }
-    function renderSummary(payload) {
-      summary.innerHTML = "";
-      const counts = payload.status_counts || {};
-      const items = [`available ${payload.available ? "yes" : "no"}`].concat(
-        Object.keys(counts).sort().map((key) => `${key}: ${counts[key]}`)
-      );
-      items.forEach((item) => {
-        const pill = document.createElement("span");
-        pill.className = "battery-pill";
-        pill.textContent = item;
-        summary.appendChild(pill);
-      });
+
+    function renderAudit(payload) {
+      const counts = payload.counts || {};
+      summary.innerHTML = Object.keys(counts).sort().map((key) => `<span class="battery-pill">${escapeHtml(key)}: ${counts[key]}</span>`).join("");
+      output.innerHTML = `
+        <div><strong>rows</strong> ${escapeHtml(payload.row_count || 0)}</div>
+        <div><strong>CSV report</strong> <code>${escapeHtml(payload.csv_path || "-")}</code></div>
+        <div><strong>JSON report</strong> <code>${escapeHtml(payload.json_path || "-")}</code></div>
+        <div style="margin-top:8px">${(payload.rows || []).slice(0, 8).map((row) => `
+          <div>${escapeHtml(row.status)} · ${escapeHtml(row.reason)} · ${escapeHtml(row.csv_path || row.wrd_path)}</div>
+        `).join("")}</div>
+      `;
     }
-    function renderJobs(jobs) {
-      if (!jobs.length) {
-        tableBox.innerHTML = '<div class="battery-empty">아직 등록된 job이 없습니다.</div>';
+
+    button.addEventListener("click", async () => {
+      output.textContent = "CSV/WRD audit 실행 중...";
+      button.disabled = true;
+      const response = await fetch(button.dataset.url, {method: "POST", headers: {"Accept": "application/json"}});
+      const payload = await response.json().catch(() => ({}));
+      button.disabled = false;
+      if (!response.ok || !payload.ok) {
+        output.textContent = payload.error || "CSV/WRD audit에 실패했습니다.";
         return;
       }
-      tableBox.innerHTML = `
-        <table class="battery-job-table">
-          <thead><tr><th>ID</th><th>Type</th><th>Status</th><th>Target</th><th>Created</th><th>Updated</th><th>Error</th></tr></thead>
-          <tbody>${jobs.map((job) => `
-            <tr>
-              <td>${job.id}</td>
-              <td>${escapeHtml(job.job_type_label || job.job_type)}</td>
-              <td><span class="battery-status-badge ${escapeHtml(job.status)}">${escapeHtml(job.status)}</span></td>
-              <td>${escapeHtml(job.target || "-")}</td>
-              <td>${escapeHtml(job.created_at || "-")}</td>
-              <td>${escapeHtml(job.updated_at || "-")}</td>
-              <td>${escapeHtml(job.error_message || "")}</td>
-            </tr>
-          `).join("")}</tbody>
-        </table>`;
-    }
-    async function loadJobs() {
-      setMessage("불러오는 중...");
-      const response = await fetch(apiUrl, {headers: {"Accept": "application/json"}});
-      const payload = await response.json();
-      renderSummary(payload);
-      renderJobs(payload.jobs || []);
-      setMessage(payload.available ? "Job 상태를 불러왔습니다." : "Job DB를 사용할 수 없습니다.");
-    }
-    async function createJob(jobType) {
-      setMessage("Job 등록 중...");
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: {"Accept": "application/json", "Content-Type": "application/json"},
-        body: JSON.stringify({job_type: jobType, target: "battery", params: {phase: "queued_only"}}),
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        setMessage(payload.error || "Job을 등록하지 못했습니다.");
-        return;
-      }
-      await loadJobs();
-      setMessage(`Job #${payload.job.id} ${payload.job.status || "queued"}`);
-    }
-    panel.querySelector('[data-role="reload"]').addEventListener("click", () => loadJobs().catch((error) => setMessage(error.message)));
-    panel.querySelectorAll("[data-job-type]").forEach((button) => {
-      button.addEventListener("click", () => createJob(button.dataset.jobType).catch((error) => setMessage(error.message)));
+      renderAudit(payload);
     });
-    loadJobs().catch((error) => setMessage(error.message));
   })();
 </script>
 <script>

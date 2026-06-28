@@ -14,7 +14,7 @@ from .conditions import read_conditions as _read_conditions
 from .file_io import parse_file as _parse_file
 from .models import FileMeta, ParsedDataset
 
-CACHE_VERSION = "v1"
+CACHE_VERSION = "v3"
 
 
 def _cache_root() -> Path:

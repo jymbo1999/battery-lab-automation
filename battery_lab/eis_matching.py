@@ -73,7 +73,10 @@ class EISComparisonCluster:
     condition_count: int
     source_paths: str
     condition_keys: str
+    member_origins: str = ""
+    ts24_source_paths: str = ""
     optional_source_paths: str = ""  # matching time-series cells (24hr reps), toggle-able in the viewer
+    cluster_role: str = "comparison"
 
 
 @dataclass(frozen=True)
@@ -403,6 +406,7 @@ def close_candidates(scored: list[dict[str, Any]], *, max_rows: int = 8) -> list
 class _ComparisonCell:
     condition_key: str
     relative_path: str
+    origin: str = "steady"
 
 
 def _pick_endpoint_member(member_paths: str, match_by_path: dict[str, "EISConditionMatch"], target_hr: int = 24) -> str:
@@ -437,7 +441,7 @@ def _primary_cells(
     cells: list[_ComparisonCell] = []
     for key, group in comparison.items():
         group.sort(key=lambda m: (0 if m.status in ("verified", "manual") else 1, m.relative_path))
-        cells.append(_ComparisonCell(condition_key=key, relative_path=group[0].relative_path))
+        cells.append(_ComparisonCell(condition_key=key, relative_path=group[0].relative_path, origin="steady"))
     return cells
 
 
@@ -450,11 +454,26 @@ def _time_series_cells(
     match_by_path = {match.relative_path: match for match in matches}
     reps: dict[str, str] = {}
     for ts in sorted(ts_clusters, key=lambda t: (0 if t.match_status == "verified" else 1, t.cluster_id)):
-        if ts.condition_key and ts.condition_key in conditions:
+        if (
+            ts.has_24
+            and ts.match_status in {"verified", "manual"}
+            and ts.condition_key
+            and ts.condition_key in conditions
+        ):
             rep = _pick_endpoint_member(ts.member_paths, match_by_path, 24)
             if rep:
                 reps.setdefault(ts.condition_key, rep)
-    return [_ComparisonCell(condition_key=key, relative_path=path) for key, path in reps.items()]
+    return [_ComparisonCell(condition_key=key, relative_path=path, origin="ts_24hr") for key, path in reps.items()]
+
+
+def _merge_primary_and_ts(primary: list[_ComparisonCell], ts_cells: list[_ComparisonCell]) -> list[_ComparisonCell]:
+    """Promote 24hr time-series endpoints, keeping non-time-series cells first."""
+    by_key: dict[str, _ComparisonCell] = {}
+    for cell in primary:
+        by_key.setdefault(cell.condition_key, cell)
+    for cell in ts_cells:
+        by_key.setdefault(cell.condition_key, cell)
+    return list(by_key.values())
 
 
 def _attach_time_series(
@@ -488,26 +507,28 @@ def build_comparison_clusters(
     ts_clusters: list,
     conditions: dict[str, dict[str, Any]],
 ) -> tuple[list[EISComparisonCluster], list[EISComparisonPair]]:
-    usable = _primary_cells(matches, conditions)
+    primary = _primary_cells(matches, conditions)
     ts_cells = _time_series_cells(ts_clusters, matches, conditions)
-    buckets: dict[tuple[str, str, str, str], list[EISConditionMatch]] = defaultdict(list)
-    for match in usable:
-        condition = conditions[match.condition_key]
+    usable = _merge_primary_and_ts(primary, ts_cells)
+    buckets: dict[tuple[str, str, str, str], list[_ComparisonCell]] = defaultdict(list)
+    for cell in usable:
+        condition = conditions[cell.condition_key]
         if any(not clean(condition.get(field)) for field in REQUIRED_COMPARISON_FIELDS):
             continue
         key = tuple(clean(condition.get(field)) for field in REQUIRED_COMPARISON_FIELDS)
-        buckets[key].append(match)
+        buckets[key].append(cell)
 
     clusters: list[EISComparisonCluster] = []
     pairs: list[EISComparisonPair] = []
     cluster_idx = 1
     for required_key, group in sorted(buckets.items(), key=lambda row: (-len(row[1]), row[0])):
-        for component in loading_components(group, conditions):
+        for component in backbone_components(group):
             cluster_id = f"C{cluster_idx:03d}"
             cluster_idx += 1
             loads = [to_float(conditions[match.condition_key].get("areal_mass_density")) for match in component]
             valid_loads = [value for value in loads if value is not None]
             optional = _attach_time_series(component, required_key, ts_cells, conditions)
+            ts24_paths = [cell.relative_path for cell in component if cell.origin == "ts_24hr"]
             clusters.append(
                 EISComparisonCluster(
                     cluster_id=cluster_id,
@@ -521,7 +542,10 @@ def build_comparison_clusters(
                     condition_count=len({match.condition_key for match in component}),
                     source_paths=";".join(match.relative_path for match in component),
                     condition_keys=";".join(sorted({match.condition_key for match in component})),
+                    member_origins=";".join(match.origin for match in component),
+                    ts24_source_paths=";".join(sorted(ts24_paths)),
                     optional_source_paths=";".join(sorted(set(optional))),
+                    cluster_role="independent" if len(component) == 1 else "comparison",
                 )
             )
             for left, right in combinations(component, 2):
@@ -529,6 +553,16 @@ def build_comparison_clusters(
                 if pair:
                     pairs.append(pair)
     return clusters, pairs
+
+
+def backbone_components(group: list[EISConditionMatch]) -> list[list[EISConditionMatch]]:
+    """One cluster per backbone bucket — no loading threshold. Loading is sorted and
+    toggled in the viewer instead, so cells sharing a backbone stay in a single
+    comparison group. Buckets with a single cell remain as independent clusters
+    so newly imported EIS files are visible before a comparison partner exists."""
+    if len(group) < 2:
+        return [sorted(group, key=lambda match: match.relative_path)]
+    return [sorted(group, key=lambda match: match.relative_path)]
 
 
 def loading_components(group: list[EISConditionMatch], conditions: dict[str, dict[str, Any]]) -> list[list[EISConditionMatch]]:

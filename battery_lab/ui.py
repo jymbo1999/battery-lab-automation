@@ -16,6 +16,9 @@ from .capacity_matching import (
     CAPACITY_PROTOCOL_CLUSTER_IDS,
     CAPACITY_PROTOCOL_LABELS,
     CAPACITY_PROTOCOL_ORDER,
+    CAPACITY_PROTOCOL_TYPE_1,
+    CAPACITY_PROTOCOL_TYPE_2,
+    CAPACITY_PROTOCOL_TYPE_3,
     build_capacity_match_report,
     capacity_protocol_from_filename,
     classify_capacity_protocol,
@@ -29,7 +32,7 @@ from .config import (
     BATTERY_MATCH_EIS_JSON,
     BATTERY_OUTPUT_ROOT,
 )
-from .conditions import read_conditions
+from .conditions import find_condition, read_conditions
 from .eis_matching import build_eis_match_report, write_eis_match_outputs
 from .excel_dashboard import DEFAULT_CONDITION_SHEET, DEFAULT_CONDITION_WORKBOOK
 from .file_io import ANALYSIS_EIS, parse_file
@@ -38,7 +41,7 @@ from .plots import artifact_path_for_dataset, eis_fit_svg, multi_line_svg
 from .report import write_outputs
 from . import render_cache
 from .wonatech_service import convert_wonatech_inputs
-from wonatech_parsers.wrd import build_capacity_summary, parse_wrd_file
+from wonatech_parsers.wrd import build_capacity_summary, mass_g_from_areal_density, parse_wrd_file
 
 try:
     from eis_fit_handoff.eis_circle_fit import load_valid_fit_metadata
@@ -755,6 +758,22 @@ def render_analysis_actions(st: Any, source_root: Path, analysis_type: str, suff
             st.json(result["counts"])
 
 
+def capacity_source_mass_g(source_path: Path, conditions: dict[str, dict[str, Any]]) -> float | None:
+    """Resolve active-material mass (g) for a capacity source from conditions.
+
+    Matches the source file to its journal condition row and converts the
+    recorded areal_mass_density (mg/cm^2) to grams via mass_g_from_areal_density.
+    Returns None when conditions are unavailable or no row matches, leaving the
+    summary as absolute mAh only.
+    """
+    if not conditions:
+        return None
+    condition = find_condition(source_path.stem, conditions)
+    if not condition:
+        return None
+    return mass_g_from_areal_density(to_float(condition.get("areal_mass_density")))
+
+
 def build_analysis_artifacts(
     source_root: Path,
     analysis_type: str,
@@ -799,10 +818,16 @@ def build_analysis_artifacts(
             if analysis_type == "eis":
                 path = source_path
             else:
+                # Specific-capacity (mAh/g) normalization: by now the experiment
+                # info is known, so resolve this cell's areal_mass_density and
+                # derive mass_g. Without a condition match mass_g stays None and
+                # only absolute mAh is produced. See wonatech_parsers.wrd.
+                mass_g = capacity_source_mass_g(source_path, conditions)
                 converted_paths, conversions, conversion_errors = convert_wonatech_inputs(
                     [source_path],
                     processed_dir,
                     write_raw_wrd=write_raw_wrd,
+                    mass_g=mass_g,
                 )
                 if conversion_errors:
                     raise ValueError("; ".join(conversion_errors))
@@ -1657,6 +1682,8 @@ def load_eis_overlay_series(
             condition = conditions.get(match.condition_key, {}) if match and match.condition_key else {}
             fit = valid_fit_metadata_cached(path)
             time_hours = eis_time_hours(dataset, rel_path)
+            # EIS 파일은 파일명 행번호 규칙이 없어 매칭된 조건표 행의 date를 실험일로 사용한다.
+            journal_date = (getattr(match, "condition_date", "") if match else "") or condition.get("date") or ""
             if points:
                 series.append(
                     {
@@ -1670,6 +1697,7 @@ def load_eis_overlay_series(
                         "fit": fit,
                         "condition": condition,
                         "match": match,
+                        "journal_date": journal_date,
                         "time_hours": time_hours,
                     }
                 )
@@ -1711,11 +1739,12 @@ def load_capacity_overlay_series(
     series = []
     errors = []
     matches = {match.relative_path: match for match in report.matches}
+    conditions_by_row = conditions_by_source_row(conditions)
     for idx, rel_path in enumerate(relative_paths):
         path = CAPACITY_ROOT / rel_path
         try:
             dataset = parse_file_cached(path)
-            if dataset.meta.analysis_type != "capacity":
+            if dataset.meta.analysis_type != "capacity" and not dataset_has_capacity_curves(dataset):
                 continue
             discharge_points = capacity_discharge_points(dataset)
             charge_points = capacity_charge_points(dataset)
@@ -1729,14 +1758,22 @@ def load_capacity_overlay_series(
             condition = conditions.get(match.condition_key, {}) if match and match.condition_key else {}
             metrics = compute_metrics(dataset).metrics
             sample_label = capacity_sample_label(rel_path, dataset, match, condition, metrics)
+            charge_mean = sum(point[1] for point in charge_points) / len(charge_points) if charge_points else None
+            # 실험일: 파일명 앞 행번호(실험담당자가 직접 기재)로 원본 조건표(실험일지) 행을 직접 조회.
+            # 자동매칭이 틀려도 파일명 행번호가 맞으면 올바른 날짜가 나오도록 한다.
+            row_prefix = getattr(match, "row_prefix", None) if match else None
+            matched_date = (getattr(match, "condition_date", "") if match else "") or condition.get("date") or ""
+            journal_date = journal_date_by_row(conditions_by_row, row_prefix, fallback=matched_date)
             base_item = {
                 "relative_path": rel_path,
                 "original_point_count": original_point_count,
                 "color": colors[idx % len(colors)],
                 "condition": condition,
                 "match": match,
+                "journal_date": journal_date,
                 "metrics": metrics,
                 "sample_label": sample_label,
+                "charge_mean_capacity": charge_mean,
                 "protocol_type": classification.protocol_type,
                 "protocol_label": classification.protocol_label,
                 "protocol_cluster_id": classification.cluster_id,
@@ -1749,10 +1786,11 @@ def load_capacity_overlay_series(
                     {
                         **base_item,
                         "series_id": f"series-{len(series)}",
-                        "label": f"{sample_label} charge",
+                        "label": sample_label,
                         "short_label": Path(rel_path).stem,
                         "curve_kind": "Charge",
                         "marker_shape": "circle",
+                        "show_graph_label": not bool(discharge_points),
                         "points": charge_points,
                     }
                 )
@@ -1761,10 +1799,11 @@ def load_capacity_overlay_series(
                     {
                         **base_item,
                         "series_id": f"series-{len(series)}",
-                        "label": f"{sample_label} discharge",
+                        "label": sample_label,
                         "short_label": Path(rel_path).stem,
                         "curve_kind": "Discharge",
                         "marker_shape": "square",
+                        "show_graph_label": True,
                         "points": discharge_points,
                     }
                 )
@@ -2021,6 +2060,7 @@ def overlay_viewer_html(
     y_axis_label: str = "Y",
     table_html: str | None = None,
     fit_shape_builder: Any | None = None,
+    marker_legend: bool = False,
 ) -> str:
     series = [{**item, "series_id": item.get("series_id") or f"series-{idx}"} for idx, item in enumerate(series)]
     svg = overlay_viewer_svg(
@@ -2034,12 +2074,13 @@ def overlay_viewer_html(
         x_axis_label=x_axis_label,
         y_axis_label=y_axis_label,
         fit_shape_builder=fit_shape_builder,
+        marker_legend=marker_legend,
     )
     if not svg:
         return ""
     table = table_html if table_html is not None else overlay_basic_table(series)
     return f"""
-<div class="eis-overlay-shell" style="width:{width}px;height:{height}px;display:flex;gap:10px;align-items:stretch;font-family:Arial,sans-serif;user-select:none;-webkit-user-select:none;">
+<div class="eis-overlay-shell" data-color-mode="{color_mode}" style="width:{width}px;height:{height}px;display:flex;gap:10px;align-items:stretch;font-family:Arial,sans-serif;user-select:none;-webkit-user-select:none;">
   <div style="width:840px;position:relative;border:1px solid #d7dce2;background:#fff;user-select:none;-webkit-user-select:none;">
     <div style="position:absolute;right:10px;top:8px;z-index:3;display:flex;gap:4px;">
       <button type="button" data-zoom="out" style="width:28px;height:24px;border:1px solid #b8c0ca;background:#fff;border-radius:4px;">-</button>
@@ -2170,11 +2211,13 @@ def overlay_viewer_html(
     xAxis.innerHTML = '';
     yAxis.innerHTML = '';
     for (let value = Math.ceil(visibleXMin / xStep) * xStep; value <= visibleXMax + xStep * 0.001; value += xStep) {{
+      if (value < 0) continue;
       const x = left + (value - visibleXMin) / (visibleXMax - visibleXMin) * plotW;
       xAxis.insertAdjacentHTML('beforeend', `<line x1="${{x.toFixed(1)}}" y1="${{top}}" x2="${{x.toFixed(1)}}" y2="${{top + plotH}}" stroke="#eeeeee"/>`);
       xAxis.insertAdjacentHTML('beforeend', `<text x="${{x.toFixed(1)}}" y="${{top + plotH + 18}}" font-family="Arial" font-size="10" text-anchor="middle">${{formatTick(value)}}</text>`);
     }}
     for (let value = Math.ceil(visibleYMin / yStep) * yStep; value <= visibleYMax + yStep * 0.001; value += yStep) {{
+      if (value < 0) continue;
       const y = top + plotH - (value - visibleYMin) / (visibleYMax - visibleYMin) * plotH;
       yAxis.insertAdjacentHTML('beforeend', `<line x1="${{left}}" y1="${{y.toFixed(1)}}" x2="${{left + plotW}}" y2="${{y.toFixed(1)}}" stroke="#eeeeee"/>`);
       yAxis.insertAdjacentHTML('beforeend', `<text x="${{left - 8}}" y="${{(y + 3).toFixed(1)}}" font-family="Arial" font-size="10" text-anchor="end">${{formatTick(value)}}</text>`);
@@ -2233,30 +2276,119 @@ def overlay_viewer_html(
   let tableDragActive = false;
   let tableDragTarget = false;
   const toggledRows = new Set();
+  const colorMode = root.dataset.colorMode || 'comparison';
+  function rgbToHex(channels) {{
+    return '#' + channels.map(c => Math.max(0, Math.min(255, Math.round(c))).toString(16).padStart(2, '0')).join('');
+  }}
+  function heatmapColor(ratio) {{
+    const stops = [[0,[37,99,235]],[0.35,[14,165,233]],[0.65,[34,197,94]],[0.82,[245,158,11]],[1,[220,38,38]]];
+    for (let i = 0; i < stops.length - 1; i++) {{
+      const [lp, lr] = stops[i], [rp, rr] = stops[i + 1];
+      if (ratio >= lp && ratio <= rp) {{
+        const t = (ratio - lp) / (rp - lp);
+        return rgbToHex(lr.map((c, j) => c + (rr[j] - c) * t));
+      }}
+    }}
+    return '#dc2626';
+  }}
+  function applySeriesColor(id, color) {{
+    root.querySelectorAll(`svg g[data-series-id="${{id}}"]`).forEach(g => {{
+      if (!('labelGroup' in g.dataset)) {{
+        g.querySelectorAll('[data-series-line]').forEach(el => el.setAttribute('stroke', color));
+        g.querySelectorAll('[data-series-marker]').forEach(el => el.setAttribute('fill', color));
+      }} else {{
+        g.querySelectorAll('[data-label-line]').forEach(el => el.setAttribute('stroke', color));
+        g.querySelectorAll('[data-label-text]').forEach(el => el.setAttribute('fill', color));
+      }}
+    }});
+  }}
+  function recolorActiveSeries() {{
+    const allRows = Array.from(root.querySelectorAll('tr[data-series-id],tr[data-series-ids]'));
+    const activeRows = allRows.filter(r => !r.classList.contains('inactive-row'));
+    const inactiveRows = allRows.filter(r => r.classList.contains('inactive-row'));
+    inactiveRows.forEach(row => {{
+      const sw = row.querySelector('.swatch');
+      if (sw) {{ sw.style.background = '#ffffff'; sw.style.outline = '1px solid #cbd5e1'; }}
+    }});
+    if (!activeRows.length) return;
+    const parsed = activeRows.map(row => ({{
+      row,
+      ids: (row.dataset.seriesIds || row.dataset.seriesId || '').split(' ').filter(Boolean),
+      sortVal: parseFloat(row.dataset.sortValue)
+    }}));
+    const colorMap = new Map();
+    if (colorMode === 'time_series') {{
+      const sorted = [...parsed].sort((a, b) => {{
+        if (isNaN(a.sortVal) && isNaN(b.sortVal)) return 0;
+        if (isNaN(a.sortVal)) return 1;
+        if (isNaN(b.sortVal)) return -1;
+        return a.sortVal - b.sortVal;
+      }});
+      const n = sorted.length;
+      sorted.forEach((p, rank) => {{
+        const ratio = n <= 1 ? 1.0 : rank / (n - 1);
+        const start = [254, 202, 202], end = [153, 27, 27];
+        colorMap.set(p.row, rgbToHex(start.map((c, i) => c + (end[i] - c) * ratio)));
+      }});
+    }} else {{
+      const validVals = parsed.map(p => p.sortVal).filter(v => !isNaN(v));
+      const low = validVals.length ? Math.min(...validVals) : 0;
+      const high = validVals.length ? Math.max(...validVals) : 1;
+      parsed.forEach(p => {{
+        let color;
+        if (!isNaN(p.sortVal) && validVals.length > 0) {{
+          const ratio = Math.abs(high - low) < 1e-10 ? 0.5 : Math.max(0, Math.min(1, (p.sortVal - low) / (high - low)));
+          color = heatmapColor(ratio);
+        }} else {{
+          color = '#64748b';
+        }}
+        colorMap.set(p.row, color);
+      }});
+    }}
+    parsed.forEach(({{row, ids}}) => {{
+      const color = colorMap.get(row);
+      const sw = row.querySelector('.swatch');
+      if (sw) {{ sw.style.background = color; sw.style.outline = ''; }}
+      ids.forEach(id => applySeriesColor(id, color));
+    }});
+  }}
   function setSeriesActive(id, active) {{
     root.querySelectorAll(`svg [data-series-id="${{id}}"]`).forEach(node => {{
       node.style.display = active ? '' : 'none';
       node.dataset.hidden = active ? '' : '1';
     }});
-    root.querySelectorAll(`tr[data-series-id="${{id}}"]`).forEach(row => row.classList.toggle('inactive-row', !active));
+  }}
+  function rowSeriesIds(row) {{
+    return (row.dataset.seriesIds || row.dataset.seriesId || '').split(' ').filter(Boolean);
+  }}
+  function _setRowState(row, active) {{
+    rowSeriesIds(row).forEach(id => setSeriesActive(id, active));
+    row.classList.toggle('inactive-row', !active);
+  }}
+  function setRowActive(row, active) {{
+    _setRowState(row, active);
+    recolorActiveSeries();
   }}
   function setAllSeriesActive(active) {{
-    root.querySelectorAll('tr[data-series-id]').forEach(row => setSeriesActive(row.dataset.seriesId, active));
+    root.querySelectorAll('tr[data-series-ids],tr[data-series-id]').forEach(row => _setRowState(row, active));
+    recolorActiveSeries();
   }}
-  function applyRowToggle(id) {{
-    if (!id || toggledRows.has(id)) return;
-    toggledRows.add(id);
-    setSeriesActive(id, tableDragTarget);
+  function applyRowToggle(row) {{
+    const rowId = row?.dataset?.seriesGroup || row?.dataset?.seriesIds || row?.dataset?.seriesId;
+    if (!rowId || toggledRows.has(rowId)) return;
+    toggledRows.add(rowId);
+    _setRowState(row, tableDragTarget);
   }}
   root.querySelector('[data-series-toggle="show-all"]').addEventListener('click', () => setAllSeriesActive(true));
   root.querySelector('[data-series-toggle="hide-all"]').addEventListener('click', () => setAllSeriesActive(false));
-  root.querySelectorAll('tr[data-series-id]').forEach(row => {{
+  root.querySelectorAll('tr[data-series-ids],tr[data-series-id]').forEach(row => {{
     row.addEventListener('pointerdown', ev => {{
       ev.preventDefault();
       tableDragActive = true;
       toggledRows.clear();
       tableDragTarget = row.classList.contains('inactive-row');
-      applyRowToggle(row.dataset.seriesId);
+      applyRowToggle(row);
+      recolorActiveSeries();
     }});
     row.addEventListener('pointerup', ev => {{
       tableDragActive = false;
@@ -2265,8 +2397,8 @@ def overlay_viewer_html(
   }});
   root.addEventListener('pointermove', ev => {{
     if (!tableDragActive) return;
-    const row = document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.('tr[data-series-id]');
-    if (row && root.contains(row)) applyRowToggle(row.dataset.seriesId);
+    const row = document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.('tr[data-series-ids],tr[data-series-id]');
+    if (row && root.contains(row)) {{ applyRowToggle(row); recolorActiveSeries(); }}
   }});
   root.addEventListener('pointerup', () => {{ tableDragActive = false; toggledRows.clear(); }});
   setInitialViewport();
@@ -2274,6 +2406,15 @@ def overlay_viewer_html(
 }})();
 </script>
 """
+
+
+def sample_thickness_label(condition: dict[str, Any]) -> str:
+    for key in ("sample", "raw_sample_name", "cell_id", "display_label"):
+        text = str(condition.get(key) or "")
+        matches = re.findall(r"(?i)\d+\s*T(?:\s*\d+\s*T)?", text)
+        if matches:
+            return "+".join(re.sub(r"\s+", "", match).upper() for match in matches)
+    return "—"
 
 
 def eis_overlay_table(series: list[dict[str, Any]], color_mode: str = "comparison") -> str:
@@ -2284,16 +2425,20 @@ def eis_overlay_table(series: list[dict[str, Any]], color_mode: str = "compariso
         fit = item["fit"]
         color = item["color"]
         series_id = html.escape(str(item.get("series_id") or f"series-{idx}"))
+        raw_sort = item.get("time_hours") if color_mode == "time_series" else to_float(condition.get("areal_mass_density"))
+        sort_attr = f' data-sort-value="{raw_sort}"' if raw_sort is not None else ""
         body.append(
-            f'<tr data-series-id="{series_id}">'
-            f'<td class="graph-cell" title="{html.escape(str(item["short_label"]))}"><span class="swatch" style="background:{color};"></span>{html.escape(str(item["short_label"]))}</td>'
+            f'<tr data-series-id="{series_id}"{sort_attr}>'
+            f'<td class="graph-cell" title="{html.escape(str(item["short_label"]))} ({html.escape(str(item.get("journal_date") or "미상"))})"><span class="swatch" style="background:{color};"></span>{html.escape(str(item["short_label"]))}</td>'
             f"<td class=\"num-cell\">{format_optional(condition.get('areal_mass_density'))}</td>"
+            f"<td class=\"nowrap-cell\">{html.escape(sample_thickness_label(condition))}</td>"
+            f"<td class=\"num-cell\">{format_optional(fit.get('rs_ohm'))}</td>"
+            f"<td class=\"num-cell\">{format_optional(fit.get('rct_ohm'))}</td>"
+            f"<td class=\"nowrap-cell\">{html.escape(str(condition.get('date') or ''))}</td>"
             f"<td class=\"text-cell\" title=\"{html.escape(str(condition.get('electrolyte') or ''))}\">{html.escape(str(condition.get('electrolyte') or ''))}</td>"
             f"<td class=\"text-cell\" title=\"{html.escape(str(condition.get('binder') or ''))}\">{html.escape(str(condition.get('binder') or ''))}</td>"
             f"<td class=\"nowrap-cell\">{html.escape(str(condition.get('voltage_range') or ''))}</td>"
             f"<td class=\"nowrap-cell\">{html.escape(str(condition.get('ratio') or ''))}</td>"
-            f"<td class=\"num-cell\">{format_optional(fit.get('rs_ohm'))}</td>"
-            f"<td class=\"num-cell\">{format_optional(fit.get('rct_ohm'))}</td>"
             "</tr>"
         )
     legend = ""
@@ -2323,12 +2468,14 @@ def eis_overlay_table(series: list[dict[str, Any]], color_mode: str = "compariso
         "<tr>"
         '<th style="text-align:left;">Graph</th>'
         '<th style="text-align:right;">Areal</th>'
+        '<th style="text-align:left;">T</th>'
+        '<th style="text-align:right;">Rs</th>'
+        '<th style="text-align:right;">Rct</th>'
+        '<th style="text-align:left;">Date</th>'
         '<th style="text-align:left;">전해질</th>'
         '<th style="text-align:left;">Binder</th>'
         '<th style="text-align:left;">Voltage</th>'
         '<th style="text-align:left;">ratio</th>'
-        '<th style="text-align:right;">Rs</th>'
-        '<th style="text-align:right;">Rct</th>'
         "</tr></thead><tbody>"
         + "".join(body)
         + "</tbody></table>"
@@ -2354,42 +2501,88 @@ def capacity_overlay_html(
         x_axis_label="Cycle",
         y_axis_label="Specific capacity (mAh/g)",
         table_html=capacity_overlay_table(series),
+        marker_legend=True,
     )
 
 
+# Protocol-specific KPI column layouts for the capacity live-viewer summary table.
+# Common prefix (Graph/Areal/T/Density/ICE) and suffix (ΔV/전해질/Binder/Voltage/ratio)
+# are shared; only the middle KPI block changes per protocol cluster.
+CAPACITY_TABLE_PREFIX_HEADERS = [("Graph", "left"), ("Areal", "right"), ("T", "left"), ("Density", "right"), ("ICE", "right")]
+CAPACITY_TABLE_SUFFIX_HEADERS = [
+    ("ΔV", "right"),
+    ("전해질", "left"),
+    ("Binder", "left"),
+    ("Voltage", "left"),
+    ("ratio", "left"),
+]
+CAPACITY_KPI_HEADERS = {
+    CAPACITY_PROTOCOL_TYPE_1: [
+        ("N", "right"),
+        ("Qd1", "right"),
+        ("QdN", "right"),
+        ("RetN", "right"),
+        ("F/cyc", "right"),
+    ],
+    CAPACITY_PROTOCOL_TYPE_2: [
+        ("N0.5", "right"),
+        ("Q0.1ref", "right"),
+        ("Q0.5i", "right"),
+        ("Drop0.5", "right"),
+        ("Q0.5N", "right"),
+        ("Ret0.5", "right"),
+        ("F0.5/cyc", "right"),
+    ],
+    CAPACITY_PROTOCOL_TYPE_3: [
+        ("N", "right"),
+        ("Q0.1", "right"),
+        ("Q0.5", "right"),
+        ("Q1", "right"),
+        ("Q1.5", "right"),
+        ("Q2", "right"),
+        ("R2/0.1", "right"),
+        ("Rec0.5", "right"),
+    ],
+}
+
+
 def capacity_overlay_table(series: list[dict[str, Any]]) -> str:
-    rows = sorted(series, key=lambda item: capacity_table_sort_key(item))
+    grouped_rows = capacity_table_group_rows(series)
+    protocol_type = capacity_table_protocol_type(grouped_rows)
+    kpi_headers = CAPACITY_KPI_HEADERS.get(protocol_type, CAPACITY_KPI_HEADERS[CAPACITY_PROTOCOL_TYPE_1])
     body = []
-    for idx, item in enumerate(rows):
+    for idx, group in enumerate(grouped_rows):
+        item = group["item"]
         condition = item.get("condition") or {}
         metrics = item.get("metrics") or {}
-        match = item.get("match")
         color = item["color"]
-        series_id = html.escape(str(item.get("series_id") or f"series-{idx}"))
-        row_number = getattr(match, "journal_row", None) or getattr(match, "row_prefix", None) or ""
-        protocol_text = f"{item.get('protocol_cluster_id') or ''} {item.get('protocol_label') or ''}".strip()
-        protocol_title = item.get("protocol_reason") or protocol_text
+        series_ids = " ".join(html.escape(str(series_id)) for series_id in group["series_ids"])
+        series_group = html.escape(str(group["group_key"] or f"group-{idx}"))
         bend_count = item.get("bend_count")
-        curve_kind = item.get("curve_kind") or ""
-        graph_label = item.get("sample_label") or item["short_label"]
+        raw_sort = to_float(condition.get("areal_mass_density"))
+        sort_attr = f' data-sort-value="{raw_sort}"' if raw_sort is not None else ""
+        discharge_values = group.get("discharge_values") or []
+        cells = [
+            f'<td class="graph-cell" title="{html.escape(str(item["short_label"]))} ({html.escape(str(item.get("journal_date") or "미상"))})"><span class="swatch" style="background:{color};"></span>{html.escape(str(item["short_label"]))}</td>',
+            f'<td class="num-cell">{format_capacity_kpi(condition.get("areal_mass_density"))}</td>',
+            f'<td class="nowrap-cell">{html.escape(sample_thickness_label(condition))}</td>',
+            f'<td class="num-cell">{html.escape(format_capacity_density_cell(condition))}</td>',
+            f'<td class="num-cell">{html.escape(format_capacity_ice_cell(metrics))}</td>',
+        ]
+        cells.extend(capacity_kpi_cells(protocol_type, discharge_values))
+        cells.append(f'<td class="num-cell">{html.escape(format_capacity_delta_v(bend_count))}</td>')
+        cells.extend(
+            [
+                f"<td class=\"text-cell\" title=\"{html.escape(str(condition.get('electrolyte') or ''))}\">{html.escape(str(condition.get('electrolyte') or ''))}</td>",
+                f"<td class=\"text-cell\" title=\"{html.escape(str(condition.get('binder') or ''))}\">{html.escape(str(condition.get('binder') or ''))}</td>",
+                f"<td class=\"nowrap-cell\">{html.escape(str(condition.get('voltage_range') or ''))}</td>",
+                f"<td class=\"nowrap-cell\">{html.escape(str(condition.get('ratio') or ''))}</td>",
+            ]
+        )
         body.append(
-            f'<tr data-series-id="{series_id}">'
-            f'<td class="graph-cell" title="{html.escape(str(graph_label))}"><span class="swatch" style="background:{color};"></span>{html.escape(str(item["short_label"]))}</td>'
-            f'<td class="nowrap-cell">{html.escape(str(curve_kind))}</td>'
-            f'<td class="num-cell">{html.escape(str(row_number or ""))}</td>'
-            f"<td class=\"text-cell\" title=\"{html.escape(str(protocol_title or ''))}\">{html.escape(str(protocol_text or ''))}</td>"
-            f'<td class="num-cell">{html.escape(str(bend_count if bend_count not in (None, "") else ""))}</td>'
-            f"<td class=\"num-cell\">{html.escape(format_capacity_ice(metrics))}</td>"
-            f"<td class=\"num-cell\">{html.escape(format_electrode_density(condition))}</td>"
-            f"<td class=\"num-cell\">{format_optional(condition.get('areal_mass_density'))}</td>"
-            f"<td class=\"text-cell\" title=\"{html.escape(str(condition.get('electrolyte') or ''))}\">{html.escape(str(condition.get('electrolyte') or ''))}</td>"
-            f"<td class=\"text-cell\" title=\"{html.escape(str(condition.get('binder') or ''))}\">{html.escape(str(condition.get('binder') or ''))}</td>"
-            f"<td class=\"nowrap-cell\">{html.escape(str(condition.get('voltage_range') or ''))}</td>"
-            f"<td class=\"nowrap-cell\">{html.escape(str(condition.get('ratio') or ''))}</td>"
-            f"<td class=\"num-cell\">{format_optional(metrics.get('first_discharge_capacity'))}</td>"
-            f"<td class=\"num-cell\">{format_optional(metrics.get('last_discharge_capacity'))}</td>"
-            f"<td class=\"num-cell\">{format_optional(metrics.get('retention@100'))}</td>"
-            "</tr>"
+            f'<tr data-series-ids="{series_ids}" data-series-group="{series_group}"{sort_attr}>'
+            + "".join(cells)
+            + "</tr>"
         )
     legend = (
         '<div style="background:#fff;padding:6px 7px 5px;border-bottom:1px solid #d7dce2;">'
@@ -2398,30 +2591,244 @@ def capacity_overlay_table(series: list[dict[str, Any]]) -> str:
         'Color encodes Areal mass density: blue=lower, red=higher. Rows toggle graph visibility.'
         '</div></div>'
     )
-    header = (
-        '<th style="text-align:left;">Graph</th>'
-        '<th style="text-align:left;">Curve</th>'
-        '<th style="text-align:right;">Row</th>'
-        '<th style="text-align:left;">Type</th>'
-        '<th style="text-align:right;">Bends</th>'
-        '<th style="text-align:right;">ICE</th>'
-        '<th style="text-align:right;">Density</th>'
-        '<th style="text-align:right;">Areal</th>'
-        '<th style="text-align:left;">전해질</th>'
-        '<th style="text-align:left;">Binder</th>'
-        '<th style="text-align:left;">Voltage</th>'
-        '<th style="text-align:left;">ratio</th>'
-        '<th style="text-align:right;">First</th>'
-        '<th style="text-align:right;">Last</th>'
-        '<th style="text-align:right;">R@100</th>'
+    header_cells = CAPACITY_TABLE_PREFIX_HEADERS + list(kpi_headers) + CAPACITY_TABLE_SUFFIX_HEADERS
+    header = "".join(
+        f'<th style="text-align:{align};">{html.escape(title)}</th>' for title, align in header_cells
     )
     return overlay_table_shell(header, "".join(body), legend)
+
+
+def capacity_table_protocol_type(grouped_rows: list[dict[str, Any]]) -> str:
+    counts: dict[str, int] = {}
+    for row in grouped_rows:
+        ptype = str((row.get("item") or {}).get("protocol_type") or "")
+        if ptype in CAPACITY_KPI_HEADERS:
+            counts[ptype] = counts.get(ptype, 0) + 1
+    if not counts:
+        return CAPACITY_PROTOCOL_TYPE_1
+    return max(counts, key=lambda key: counts[key])
+
+
+def capacity_kpi_cells(protocol_type: str, values: list[float]) -> list[str]:
+    kpis = capacity_kpi_values(protocol_type, values)
+    cells = []
+    for label, _align in CAPACITY_KPI_HEADERS.get(protocol_type, CAPACITY_KPI_HEADERS[CAPACITY_PROTOCOL_TYPE_1]):
+        value = kpis.get(label)
+        if label.startswith("N"):
+            cells.append(f'<td class="num-cell">{format_capacity_count(value)}</td>')
+        else:
+            cells.append(f'<td class="num-cell">{format_capacity_kpi(value)}</td>')
+    return cells
+
+
+def capacity_kpi_values(protocol_type: str, values: list[float]) -> dict[str, float | None]:
+    if protocol_type == CAPACITY_PROTOCOL_TYPE_2:
+        seg01, seg05 = capacity_two_segments(values)
+        n05 = len(seg05)
+        q01ref = segment_mean_last(seg01)
+        q05i = segment_mean_first(seg05)
+        q05n = segment_mean_last(seg05)
+        drop05 = (1.0 - q05i / q01ref) * 100.0 if (q05i is not None and q01ref) else None
+        ret05 = capacity_pct_ratio(q05n, q05i)
+        f05cyc = (100.0 - ret05) / (n05 - 1) if (ret05 is not None and n05 > 1) else None
+        return {
+            "N0.5": n05 or None,
+            "Q0.1ref": q01ref,
+            "Q0.5i": q05i,
+            "Drop0.5": drop05,
+            "Q0.5N": q05n,
+            "Ret0.5": ret05,
+            "F0.5/cyc": f05cyc,
+        }
+    if protocol_type == CAPACITY_PROTOCOL_TYPE_3:
+        segments = capacity_rate_segments(values)
+        rep = [segment_mean_last(segment) for segment in segments]
+        q01, q05, q1, q15, q2, qrec = (rep + [None] * 6)[:6]
+        return {
+            "N": len(values) or None,
+            "Q0.1": q01,
+            "Q0.5": q05,
+            "Q1": q1,
+            "Q1.5": q15,
+            "Q2": q2,
+            "R2/0.1": capacity_pct_ratio(q2, q01),
+            "Rec0.5": capacity_pct_ratio(qrec, q05),
+        }
+    # CAPACITY_PROTOCOL_TYPE_1 (default): 0.1C continuous
+    n = len(values)
+    qd1 = values[0] if values else None
+    qdn = values[-1] if values else None
+    retn = capacity_pct_ratio(qdn, qd1)
+    fcyc = (100.0 - retn) / (n - 1) if (retn is not None and n > 1) else None
+    return {"N": n or None, "Qd1": qd1, "QdN": qdn, "RetN": retn, "F/cyc": fcyc}
+
+
+def capacity_segment_boundaries(values: list[float]) -> list[int]:
+    """Indices where a new large-delta run begins — the C-rate transition points.
+
+    Mirrors capacity_matching.count_capacity_bends so the segmentation here stays
+    consistent with the protocol classification that drives the cluster modes.
+    """
+    if len(values) < 4:
+        return []
+    positive = [value for value in values if value > 0]
+    if not positive:
+        return []
+    baseline_values = sorted(positive[: min(5, len(positive))])
+    baseline = baseline_values[len(baseline_values) // 2]
+    threshold = max(20.0, baseline * 0.12)
+    boundaries: list[int] = []
+    previous_large = False
+    for i in range(1, len(values)):
+        is_large = abs(values[i] - values[i - 1]) > threshold
+        if is_large and not previous_large:
+            boundaries.append(i)
+        previous_large = is_large
+    return boundaries
+
+
+def capacity_two_segments(values: list[float]) -> tuple[list[float], list[float]]:
+    boundaries = capacity_segment_boundaries(values)
+    boundary = boundaries[0] if boundaries else min(3, len(values))
+    return values[:boundary], values[boundary:]
+
+
+def capacity_rate_segments(values: list[float]) -> list[list[float]]:
+    boundaries = capacity_segment_boundaries(values)
+    cuts = boundaries[:5] if len(boundaries) >= 5 else [5, 15, 25, 35, 45]
+    return split_segments(values, cuts)
+
+
+def split_segments(values: list[float], cuts: list[int]) -> list[list[float]]:
+    segments: list[list[float]] = []
+    prev = 0
+    for cut in cuts:
+        cut = max(prev, min(cut, len(values)))
+        segments.append(values[prev:cut])
+        prev = cut
+    segments.append(values[prev:])
+    return segments
+
+
+def segment_mean(values: list[float]) -> float | None:
+    numbers = [value for value in values if value is not None]
+    return sum(numbers) / len(numbers) if numbers else None
+
+
+def segment_mean_last(values: list[float], window: int = 3) -> float | None:
+    if not values:
+        return None
+    return segment_mean(values[-window:])
+
+
+def segment_mean_first(values: list[float], window: int = 3) -> float | None:
+    if not values:
+        return None
+    return segment_mean(values[:window])
+
+
+def capacity_pct_ratio(numerator: float | None, denominator: float | None) -> float | None:
+    if numerator is None or not denominator:
+        return None
+    return numerator / denominator * 100.0
+
+
+def format_capacity_kpi(value: Any, decimals: int = 2) -> str:
+    number = to_float(value)
+    if number is None or not math.isfinite(number):
+        return "—"
+    return f"{number:.{decimals}f}"
+
+
+def format_capacity_count(value: Any) -> str:
+    if value is None:
+        return "—"
+    try:
+        return str(int(value))
+    except (TypeError, ValueError):
+        return "—"
+
+
+def format_capacity_delta_v(value: Any) -> str:
+    return "—" if value in (None, "") else str(value)
+
+
+def format_capacity_density_cell(condition: dict[str, Any]) -> str:
+    text = format_electrode_density(condition)
+    return "—" if text == "?" else text
+
+
+def format_capacity_ice_cell(metrics: dict[str, Any]) -> str:
+    text = format_capacity_ice(metrics)
+    return "—" if text == "?" else text
+
+
+def conditions_by_source_row(conditions: dict[str, dict[str, Any]]) -> dict[int, dict[str, Any]]:
+    """Index condition workbook rows by their 1-based source row number (실험일지 행번호)."""
+    index: dict[int, dict[str, Any]] = {}
+    for cond in conditions.values():
+        try:
+            row_no = int(cond.get("_source_row_number"))
+        except (TypeError, ValueError):
+            continue
+        index.setdefault(row_no, cond)
+    return index
+
+
+def journal_date_by_row(
+    conditions_by_row: dict[int, dict[str, Any]],
+    row_number: Any,
+    fallback: str = "",
+) -> str:
+    """원본 조건표(실험일지)에서 파일명 행번호에 해당하는 행의 date를 직접 가져온다."""
+    try:
+        row_no = int(row_number)
+    except (TypeError, ValueError):
+        row_no = None
+    if row_no is not None:
+        cond = conditions_by_row.get(row_no)
+        if cond and cond.get("date"):
+            return str(cond.get("date"))
+    return str(fallback or "")
+
+
+def capacity_discharge_values(items: list[dict[str, Any]]) -> list[float]:
+    for item in items:
+        if str(item.get("curve_kind") or "").lower() == "discharge":
+            points = item.get("points") or []
+            return [float(cap) for _cycle, cap in points if cap is not None and float(cap) > 0]
+    return []
+
+
+def capacity_table_group_rows(series: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[str, dict[str, Any]] = {}
+    for idx, item in enumerate(series):
+        key = str(item.get("relative_path") or item.get("sample_label") or item.get("short_label") or idx)
+        group = groups.setdefault(key, {"group_key": key, "series_ids": [], "items": []})
+        group["series_ids"].append(item.get("series_id") or f"series-{idx}")
+        group["items"].append(item)
+    rows = []
+    for group in groups.values():
+        preferred = next((item for item in group["items"] if str(item.get("curve_kind") or "").lower() == "discharge"), group["items"][0])
+        rows.append(
+            {
+                "group_key": group["group_key"],
+                "series_ids": group["series_ids"],
+                "item": preferred,
+                "discharge_values": capacity_discharge_values(group["items"]),
+            }
+        )
+    return sorted(rows, key=lambda row: capacity_table_sort_key(row["item"]))
 
 
 def capacity_table_sort_key(item: dict[str, Any]) -> tuple[float, str]:
     condition = item.get("condition") or {}
     areal = to_float(condition.get("areal_mass_density"))
     return (areal if areal is not None else 1e18, str(item.get("short_label") or ""))
+
+
+def capacity_protocol_display_label(label: Any) -> str:
+    return re.sub(r"^\s*\d+\s*번\s*·\s*", "", str(label or "")).strip()
 
 
 def eis_overlay_svg(
@@ -2492,6 +2899,7 @@ def overlay_viewer_svg(
     x_axis_label: str = "X",
     y_axis_label: str = "Y",
     fit_shape_builder: Any | None = None,
+    marker_legend: bool = False,
 ) -> str:
     fit_shapes = [fit_shape_builder(item) for item in series] if show_fit and fit_shape_builder else []
     all_points = [point for item in series for point in item["points"]]
@@ -2508,6 +2916,8 @@ def overlay_viewer_svg(
     domain_y_min, domain_y_max = tick_range(min(ys), max(ys), y_tick_step)
     if show_fit:
         x_floor, y_floor = 0.0, -40.0
+    elif label_layout == "density_stack":
+        x_floor, y_floor = -x_tick_step * 0.18, -y_tick_step * 0.18
     else:
         x_floor, y_floor = -50.0, -50.0
     view_x_min, view_x_max = tick_range(max(x_floor, min(xs)), max(xs), x_tick_step)
@@ -2586,7 +2996,7 @@ def overlay_viewer_svg(
         stroke_opacity = ".54" if performance_mode else ".82"
         items.append(f'<g data-series-id="{series_id}">')
         items.append(
-            f'<path data-zoom-stroke data-base-stroke-width="{stroke_width}" d="{path_for(points)}" '
+            f'<path data-series-line data-zoom-stroke data-base-stroke-width="{stroke_width}" d="{path_for(points)}" '
             f'fill="none" stroke="{color}" stroke-width="{stroke_width}" opacity="{stroke_opacity}"/>'
         )
         if not performance_mode or marker_shape in {"circle", "square"}:
@@ -2611,8 +3021,8 @@ def overlay_viewer_svg(
                     f'<circle data-zoom-radius data-base-radius="1.65" data-zoom-stroke data-base-stroke-width=".45" '
                     f'cx="{sx(x):.2f}" cy="{sy(y):.2f}" r="1.65" fill="#f4a742" stroke="#111" stroke-width=".45" opacity=".82"/>'
                 )
-        if points and idx in label_positions:
-            label = str(item["label"])
+        if points and idx in label_positions and item.get("show_graph_label", True):
+            label = str(item.get("sample_label") or item["label"])
             last_x, last_y = points[-1]
             label_x, label_y = label_positions[idx][:2]
             end_x, end_y = sx(last_x), sy(last_y)
@@ -2632,6 +3042,8 @@ def overlay_viewer_svg(
             label_items.append("</g>")
         items.append("</g>")
     items.append("</g>")
+    if marker_legend:
+        items.append(capacity_marker_legend_svg(left + plot_w - 122, top + 10))
     if label_items:
         items.append('<g data-label-zoom-layer>')
         items.extend(label_items)
@@ -2640,18 +3052,32 @@ def overlay_viewer_svg(
     return "\n".join(items)
 
 
+def capacity_marker_legend_svg(x: float, y: float) -> str:
+    return (
+        f'<g data-marker-legend transform="translate({x:.1f} {y:.1f})">'
+        '<rect x="0" y="0" width="112" height="42" rx="4" fill="#ffffff" fill-opacity=".92" stroke="#cbd5e1" stroke-width=".8"/>'
+        '<line x1="8" y1="14" x2="31" y2="14" stroke="#111111" stroke-width="1.4"/>'
+        '<circle cx="19.5" cy="14" r="3.5" fill="#ffffff" stroke="#111111" stroke-width=".9"/>'
+        '<text x="40" y="17" font-family="Arial" font-size="10.5" fill="#334155">Charge</text>'
+        '<line x1="8" y1="31" x2="31" y2="31" stroke="#111111" stroke-width="1.4"/>'
+        '<rect x="16" y="27.5" width="7" height="7" fill="#ffffff" stroke="#111111" stroke-width=".9"/>'
+        '<text x="40" y="34" font-family="Arial" font-size="10.5" fill="#334155">Discharge</text>'
+        '</g>'
+    )
+
+
 def overlay_marker_svg(shape: str, x: float, y: float, color: str) -> str:
     radius = 2.05
     size = radius * 2
     if shape == "square":
         half = size / 2
         return (
-            f'<rect data-zoom-radius data-base-radius="{half}" data-zoom-stroke data-base-stroke-width=".45" '
+            f'<rect data-series-marker data-zoom-radius data-base-radius="{half}" data-zoom-stroke data-base-stroke-width=".45" '
             f'data-cx="{x:.2f}" data-cy="{y:.2f}" x="{x - half:.2f}" y="{y - half:.2f}" '
             f'width="{size}" height="{size}" fill="{color}" fill-opacity=".24" stroke="#111111" stroke-width=".45" opacity=".95"/>'
         )
     return (
-        f'<circle data-zoom-radius data-base-radius="{radius}" data-zoom-stroke data-base-stroke-width=".45" '
+        f'<circle data-series-marker data-zoom-radius data-base-radius="{radius}" data-zoom-stroke data-base-stroke-width=".45" '
         f'cx="{x:.2f}" cy="{y:.2f}" r="{radius}" '
         f'fill="{color}" fill-opacity=".24" stroke="#111111" stroke-width=".45" opacity=".95"/>'
     )
@@ -2787,37 +3213,84 @@ def overlay_density_stack_label_positions(
     all_points = []
     for idx, item in enumerate(series):
         points = item.get("points") or []
+        if points:
+            all_points.extend(points)
+        if not item.get("show_graph_label", True):
+            continue
         if not points:
             continue
-        all_points.extend(points)
-        condition = item.get("condition") or {}
-        areal = to_float(condition.get("areal_mass_density"))
+        charge_mean = to_float(item.get("charge_mean_capacity"))
+        if charge_mean is None:
+            charge_mean = sum(point[1] for point in points) / len(points)
         label = str(item.get("label") or item.get("short_label") or "")
         anchors.append(
             {
                 "idx": idx,
-                "areal": areal if areal is not None else float("inf"),
+                "charge_mean": charge_mean,
                 "label": label,
                 "sort_label": str(item.get("short_label") or label),
-                "curve": str(item.get("curve_kind") or ""),
             }
         )
     if not anchors or not all_points:
         return {}
 
-    reference = sorted(all_points, key=lambda point: point[0], reverse=True)[min(2, len(all_points) - 1)]
     max_label_width = max(overlay_label_width(row["label"]) for row in anchors)
-    label_x = sx(reference[0]) + 5
-    label_x = max(left + 4, min(left + plot_w - max_label_width - 8, label_x))
+    line_gap = 9.5
+    ordered = sorted(anchors, key=lambda row: (-row["charge_mean"], row["sort_label"]))
+    stack_height = line_gap * (len(ordered) - 1) + 10
+    label_x, top_y = density_stack_best_position(all_points, sx, sy, left, top, plot_w, plot_h, max_label_width, stack_height)
+    stack_center_y = sy(sum(row["charge_mean"] for row in ordered) / len(ordered))
+    top_y = stack_center_y - line_gap * (len(ordered) - 1) / 2
+    return {int(row["idx"]): (label_x, top_y + pos * line_gap, "left_corner") for pos, row in enumerate(ordered)}
 
-    line_gap = 12.0
-    base_y = sy(reference[1]) + 40
-    min_base_y = top + line_gap * (len(anchors) - 1) + 12
-    max_base_y = top + plot_h - 6
-    base_y = max(min_base_y, min(max_base_y, base_y))
 
-    ordered = sorted(anchors, key=lambda row: (row["areal"], row["sort_label"], row["curve"]))
-    return {int(row["idx"]): (label_x, base_y - pos * line_gap, "left_corner") for pos, row in enumerate(ordered)}
+def density_stack_best_position(
+    points: list[tuple[float, float]],
+    sx: Any,
+    sy: Any,
+    left: float,
+    top: float,
+    plot_w: float,
+    plot_h: float,
+    stack_w: float,
+    stack_h: float,
+) -> tuple[float, float]:
+    plot_right = left + plot_w
+    plot_top = top
+    plot_bottom = top + plot_h
+    right_candidates = [plot_right - margin for margin in (10, 36, 68, 104, 144, 188)]
+    top_candidates = [plot_top + offset for offset in (12, 34, 58, 86, 120, 158)]
+    screen_points = [(sx(x), sy(y)) for x, y in points]
+
+    best: tuple[float, float, float] | None = None
+    for right_x in right_candidates:
+        x = max(left + 4, min(plot_right - stack_w - 8, right_x - stack_w))
+        for y in top_candidates:
+            y = max(plot_top + 8, min(plot_bottom - stack_h - 6, y))
+            score = density_stack_overlap_score(screen_points, x, y, stack_w, stack_h, plot_right)
+            candidate = (score, x, y)
+            if best is None or candidate < best:
+                best = candidate
+    if best is None:
+        return left + plot_w - stack_w - 8, top + 12
+    return best[1], best[2]
+
+
+def density_stack_overlap_score(points: list[tuple[float, float]], x: float, y: float, w: float, h: float, plot_right: float) -> float:
+    pad_x = 10.0
+    pad_y = 6.0
+    score = (plot_right - (x + w)) * 0.04 + (y * 0.02)
+    for px, py in points:
+        inside_x = x - pad_x <= px <= x + w + pad_x
+        inside_y = y - pad_y <= py <= y + h + pad_y
+        if inside_x and inside_y:
+            score += 1000.0
+        dx = 0.0 if x <= px <= x + w else min(abs(px - x), abs(px - (x + w)))
+        dy = 0.0 if y <= py <= y + h else min(abs(py - y), abs(py - (y + h)))
+        dist = math.hypot(dx, dy)
+        if dist < 28:
+            score += (28 - dist) * 8
+    return score
 
 
 def overlay_label_positions(
@@ -3031,6 +3504,10 @@ def eis_points(dataset: Any) -> list[tuple[float, float]]:
 
 def capacity_points(dataset: Any) -> list[tuple[float, float]]:
     return capacity_discharge_points(dataset) or capacity_charge_points(dataset)
+
+
+def dataset_has_capacity_curves(dataset: Any) -> bool:
+    return bool(capacity_charge_points(dataset) or capacity_discharge_points(dataset))
 
 
 def capacity_charge_points(dataset: Any) -> list[tuple[float, float]]:

@@ -607,7 +607,7 @@ DASHBOARD_TEMPLATE = r"""<!doctype html>
       const cardAreal = Number(card.condition.areal_mass_density);
       if (!Number.isFinite(refAreal) || !Number.isFinite(cardAreal)) return false;
       if (Math.abs(refAreal - cardAreal) > limit) return false;
-      return ['electrolyte', 'binder', 'voltage_range', 'ratio'].every(key => sameCondition(reference, card, key));
+      return ['cell_type', 'electrolyte', 'binder', 'voltage_range', 'ratio'].every(key => sameCondition(reference, card, key));
     }
     function sameCondition(a, b, key) {
       const av = normalizeConditionValue(a.condition[key]);
@@ -946,7 +946,7 @@ DASHBOARD_TEMPLATE = r"""<!doctype html>
           return `<div class="compare-item ${cls}">
             <strong>${escapeHtml(item.cell_id_a)} vs ${escapeHtml(item.cell_id_b)} · Grade ${escapeHtml(item.comparison_grade)}</strong><br>
             ${escapeHtml(item.reason)}<br>
-            <span class="subtle">loading diff ${escapeHtml(diff)} mg/cm2 · electrolyte ${yesNo(item.same_electrolyte)} · binder ${yesNo(item.same_binder)} · voltage ${yesNo(item.same_voltage_range)} · ratio ${yesNo(item.same_ratio)}</span>
+            <span class="subtle">loading diff ${escapeHtml(diff)} mg/cm2 · type ${yesNo(item.same_cell_type)} · electrolyte ${yesNo(item.same_electrolyte)} · binder ${yesNo(item.same_binder)} · voltage ${yesNo(item.same_voltage_range)} · ratio ${yesNo(item.same_ratio)}</span>
           </div>`;
         }).join('');
         return;

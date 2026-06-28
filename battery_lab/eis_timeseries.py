@@ -68,13 +68,70 @@ def _hours(group: list[EISConditionMatch]) -> set[int | None]:
     return {hr_num(m.time_point) for m in group if m.time_point}
 
 
+def _manual_condition_key(group: list[EISConditionMatch]) -> str:
+    keys = {m.condition_key for m in group if m.condition_key}
+    if len(keys) != 1:
+        return ""
+    return next(iter(keys)) if all(m.status == "manual" for m in group) else ""
+
+
+def _provenance(parts: list[tuple[str, set[int | None]]]) -> str:
+    return "+".join(f"{sig}{_fmt_hrs(hours)}" for sig, hours in parts)
+
+
+def _merge_manual_same_row(
+    sig_groups: list[tuple[str, list[EISConditionMatch]]],
+) -> tuple[list[dict[str, Any]], list[tuple[str, list[EISConditionMatch]]]]:
+    """Merge manually confirmed fragments for the same journal row.
+
+    Operator confirmation can intentionally map several filename fragments to
+    one row/cell. Merge only when hour sets do not overlap, so duplicate or
+    empty re-measurement files stay visible for review.
+    """
+    by_key: dict[str, list[tuple[str, list[EISConditionMatch], set[int | None]]]] = defaultdict(list)
+    passthrough: list[tuple[str, list[EISConditionMatch]]] = []
+    for sig, group in sig_groups:
+        key = _manual_condition_key(group)
+        if key:
+            by_key[key].append((sig, group, _hours(group)))
+        else:
+            passthrough.append((sig, group))
+
+    merged: list[dict[str, Any]] = []
+    leftovers: list[tuple[str, list[EISConditionMatch]]] = list(passthrough)
+    for keyed in by_key.values():
+        if len(keyed) < 2:
+            sig, group, _ = keyed[0]
+            leftovers.append((sig, group))
+            continue
+        seen_hours: set[int | None] = set()
+        can_merge = True
+        for _, _, hours in keyed:
+            if seen_hours & hours:
+                can_merge = False
+                break
+            seen_hours |= hours
+        if not can_merge:
+            leftovers.extend((sig, group) for sig, group, _ in keyed)
+            continue
+        parts = sorted(((sig, hours) for sig, _, hours in keyed), key=lambda x: x[0])
+        members: list[EISConditionMatch] = []
+        for sig, group, _ in sorted(keyed, key=lambda x: x[0]):
+            members.extend(group)
+        merged.append({"members": members, "provenance": _provenance(parts)})
+    return merged, leftovers
+
+
 def _merge_fragments(sig_groups: list[tuple[str, list[EISConditionMatch]]]) -> list[dict[str, Any]]:
     """Endpoint-rule merge within one base signature.
 
-    A 0-side fragment (has 0hr, no 24hr) merges with a 24-side fragment (has
-    24hr, no 0hr) when their hour sets are disjoint. Complete groups (0 and 24)
-    and groups with neither endpoint are passed through unchanged.
+    First, merge disjoint fragments that were manually confirmed to the same
+    journal row. Then a 0-side fragment (has 0hr, no 24hr) merges with a
+    24-side fragment (has 24hr, no 0hr) when their hour sets are disjoint.
+    Complete groups (0 and 24) and groups with neither endpoint are passed
+    through unchanged.
     """
+    results, sig_groups = _merge_manual_same_row(sig_groups)
     complete: list[list[EISConditionMatch]] = []
     left: list[tuple[str, list[EISConditionMatch], set[int | None]]] = []
     right: list[tuple[str, list[EISConditionMatch], set[int | None]]] = []
@@ -91,7 +148,7 @@ def _merge_fragments(sig_groups: list[tuple[str, list[EISConditionMatch]]]) -> l
         else:
             neither.append(group)
 
-    results: list[dict[str, Any]] = [{"members": list(g), "provenance": ""} for g in complete]
+    results.extend({"members": list(g), "provenance": ""} for g in complete)
 
     right_sorted = sorted(right, key=lambda x: x[0])
     used = set()
@@ -107,7 +164,7 @@ def _merge_fragments(sig_groups: list[tuple[str, list[EISConditionMatch]]]) -> l
             continue
         j, rsig, rgroup, rh = paired
         used.add(j)
-        prov = f"{lsig}{_fmt_hrs(lh)}+{rsig}{_fmt_hrs(rh)}"
+        prov = _provenance([(lsig, lh), (rsig, rh)])
         results.append({"members": list(lgroup) + list(rgroup), "provenance": prov})
 
     for j, (rsig, rgroup, rh) in enumerate(right_sorted):
@@ -153,8 +210,13 @@ def _cluster_dict(members: list[EISConditionMatch], provenance: str,
     best_key = ranked[0][0] if ranked else ""
     best = meta.get(best_key)
     competing = len(ranked) > 1 and ranked[1][1] >= ranked[0][1] * REPLICATE_VOTE_RATIO
+    all_manual = bool(members) and all(m.status == "manual" for m in members)
 
-    if not (has_zero and has_24):
+    if all_manual and best_key and not competing:
+        row = conditions.get(best_key, {}).get("_source_row_number") or "?"
+        status = "manual"
+        reason = f"담당자 회신으로 실험일지 행 {row} 수동 확정 (파일 {len(members)}개)."
+    elif not (has_zero and has_24):
         status = "ambiguous"
         reason = "0hr/24hr 끝점이 불완전합니다(병합 후에도 한쪽 결손)."
     elif not best_key:
@@ -200,22 +262,26 @@ def build_time_series_clusters(
     ts_matches = [m for m in matches if m.is_time_series]
     stage1 = _stage1_groups(ts_matches)
 
+    manual_merged, stage_items = _merge_manual_same_row(list(stage1.items()))
+
     by_base: dict[str, list[tuple[str, list[EISConditionMatch]]]] = defaultdict(list)
-    for sig, group in stage1.items():
+    for sig, group in stage_items:
         by_base[_base_signature(sig)].append((sig, group))
 
     cluster_dicts: list[dict[str, Any]] = []
+    for item in manual_merged:
+        cluster_dicts.append(_cluster_dict(item["members"], item["provenance"], conditions))
     for sig_groups in by_base.values():
         for item in _merge_fragments(sig_groups):
             cluster_dicts.append(_cluster_dict(item["members"], item["provenance"], conditions))
 
     cluster_dicts.sort(key=lambda c: (c["folder_date"], c["cluster_signature"], c["member_paths"]))
 
-    row_counts = Counter(c["condition_key"] for c in cluster_dicts if c["condition_key"])
+    row_counts = Counter(c["condition_key"] for c in cluster_dicts if c["condition_key"] and c["match_status"] != "manual")
     clusters: list[EISTimeSeriesCluster] = []
     for idx, c in enumerate(cluster_dicts, start=1):
         status, reason = c["match_status"], c["reason"]
-        if c["condition_key"] and row_counts[c["condition_key"]] > 1:
+        if status != "manual" and c["condition_key"] and row_counts[c["condition_key"]] > 1:
             status = "conflict"
             reason = f"같은 일지 행을 {row_counts[c['condition_key']]}개 클러스터가 차지(충돌). " + reason
         clusters.append(EISTimeSeriesCluster(

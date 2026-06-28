@@ -59,7 +59,6 @@ class BatteryRouteTests(unittest.TestCase):
                     "/battery/capacity",
                     "/battery/review_EIS_capacity",
                     "/battery/files",
-                    "/battery/jobs",
                     "/battery/settings",
                     "/battery/status",
                     "/battery/health",
@@ -70,17 +69,62 @@ class BatteryRouteTests(unittest.TestCase):
                     response = client.get(path)
                     self.assertEqual(response.status_code, 200, path)
 
+                jobs_response = client.get("/battery/jobs")
+                self.assertEqual(jobs_response.status_code, 302)
+                self.assertEqual(jobs_response.headers["Location"], "/battery/eis")
+
                 eis_response = client.get("/battery/eis?graph=b.svg")
-                self.assertIn("b.svg", eis_response.get_data(as_text=True))
-                self.assertIn("/battery/artifact/eis/b.svg", eis_response.get_data(as_text=True))
-                self.assertIn("원본 EIS 라이브 뷰어", eis_response.get_data(as_text=True))
-                self.assertIn("/battery/api/eis/finder", eis_response.get_data(as_text=True))
+                eis_html = eis_response.get_data(as_text=True)
+                self.assertIn("Live Viewer", eis_html)
+                self.assertIn("Rct</b>", eis_html)
+                self.assertNotIn("Streamlit 원본처럼", eis_html)
+                # 그래프 산출물 생성/갱신 job launcher moved to the Settings page
+                self.assertNotIn("그래프 산출물 생성/갱신", eis_html)
+                self.assertNotIn("최근 작업 새로고침", eis_html)
+                self.assertNotIn("아래에서 실행과 상태 확인을 함께 처리합니다.", eis_html)
+                self.assertNotIn('href="/battery/jobs"', eis_html)
+                self.assertNotIn("원본 EIS 데이터 브라우저", eis_html)
+                self.assertNotIn("/battery/api/eis/finder", eis_html)
+                self.assertNotIn("EIS 수동 매칭", eis_html)
+                self.assertNotIn("EIS 산출 그래프 보기", eis_html)
+                self.assertNotIn("이미 생성된 SVG/PNG artifact를 개별 파일 단위로 확인합니다.", eis_html)
 
                 capacity_response = client.get("/battery/capacity?graph=c.svg")
-                self.assertIn("c.svg", capacity_response.get_data(as_text=True))
-                self.assertIn("/battery/artifact/capacity/c.svg", capacity_response.get_data(as_text=True))
-                self.assertIn("WRD/raw source preview", capacity_response.get_data(as_text=True))
-                self.assertIn("/battery/api/capacity/finder", capacity_response.get_data(as_text=True))
+                capacity_html = capacity_response.get_data(as_text=True)
+                self.assertIn("1) 0.1C continuous", capacity_html)
+                self.assertIn("2) 안정화후 0.5C", capacity_html)
+                self.assertIn("3) rate performance", capacity_html)
+                self.assertNotIn("Protocol cluster</option>", capacity_html)
+                self.assertIn("WRD/raw source preview", capacity_html)
+                self.assertIn("Live Viewer", capacity_html)
+                self.assertIn("rate performance", capacity_html)
+                self.assertIn("R2/0.1", capacity_html)
+                self.assertNotIn("protocol cluster 또는 단일", capacity_html)
+                # 그래프 산출물 생성/갱신 job launcher moved to the Settings page
+                self.assertNotIn("최근 작업 새로고침", capacity_html)
+                self.assertNotIn('href="/battery/jobs"', capacity_html)
+                self.assertNotIn("원본 Capacity 데이터 브라우저", capacity_html)
+                self.assertNotIn("/battery/api/capacity/finder", capacity_html)
+                self.assertNotIn("Capacity 수동 매칭", capacity_html)
+                self.assertNotIn("Capacity 산출 그래프 보기", capacity_html)
+                self.assertNotIn("/battery/artifact/capacity/c.svg", capacity_html)
+
+                settings_response = client.get("/battery/settings")
+                settings_html = settings_response.get_data(as_text=True)
+                self.assertIn("운영 도구", settings_html)
+                # job launcher now lives on Settings for both analysis types
+                self.assertIn("그래프 산출물 생성/갱신 — EIS", settings_html)
+                self.assertIn("그래프 산출물 생성/갱신 — Capacity", settings_html)
+                self.assertIn("최근 작업 새로고침", settings_html)
+                self.assertIn("/battery/files", settings_html)
+                self.assertIn("/battery/review_EIS_capacity", settings_html)
+                self.assertIn("/battery/api/eis/finder", settings_html)
+                self.assertIn("/battery/api/capacity/finder", settings_html)
+                self.assertIn("Capacity CSV / WRD Audit", settings_html)
+                self.assertIn("/battery/api/capacity/csv-wrd-audit", settings_html)
+                audit_response = client.post("/battery/api/capacity/csv-wrd-audit")
+                self.assertEqual(audit_response.status_code, 200)
+                self.assertTrue(audit_response.get_json()["ok"])
 
                 review_response = client.get("/battery/review_EIS_capacity")
                 review_html = review_response.get_data(as_text=True)
@@ -114,6 +158,17 @@ class BatteryRouteTests(unittest.TestCase):
             with stack:
                 journal = client.get("/battery/journal").get_data(as_text=True)
                 self.assertIn("/battery/journal/excel", journal)
+                self.assertIn("battery-page-journal", journal)
+                self.assertIn("battery-panel journal-panel", journal)
+                self.assertIn("battery-panel battery-path-status", journal)
+                self.assertIn(".battery-page-journal .battery-main", journal)
+                self.assertIn("새 실험 등록", journal)
+                self.assertIn("/battery/api/import/drafts", journal)
+                self.assertIn("파일 업로드", journal)
+                self.assertIn("실험정보 입력하기", journal)
+                self.assertIn("미리보기", journal)
+                self.assertIn("실험일지 xlsx에 저장하기", journal)
+                self.assertIn("/commit", journal)
 
                 excel = client.get("/battery/journal/excel").get_data(as_text=True)
                 self.assertIn("/battery/api/journal/sheet", excel)
@@ -130,6 +185,55 @@ class BatteryRouteTests(unittest.TestCase):
             reloaded = load_workbook(condition_path, data_only=False)
             self.assertEqual(reloaded["JYJ"].cell(row=2, column=1).value, "after")
             reloaded.close()
+
+    def test_journal_sheet_hide_filter_omits_ignored_rows_for_fast_initial_load(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "battery"
+            condition_path = root / "Project_Abstract" / "Cell condition Calculation.xlsx"
+            condition_path.parent.mkdir(parents=True)
+            workbook = Workbook()
+            worksheet = workbook.active
+            worksheet.title = "JYJ"
+            worksheet.append(["Sample", "참고", "전해질", "종류", "Binder", "Voltage range"])
+            worksheet.append(["matched", "12파이_Cu foil", "1.0M LiPF6 EC/DEC 1:1", "LIB", "2wt% cmc", "0.01~2V"])
+            worksheet.append(["ignored", "other", "1.0M LiPF6 EC/DEC 1:1", "LIB", "PVDF", "0.01~2V"])
+            workbook.save(condition_path)
+
+            client, stack = self.patched_client(root)
+            with stack:
+                hidden = client.get("/battery/api/journal/sheet?filter=hide").get_json()
+                full = client.get("/battery/api/journal/sheet?filter=all").get_json()
+
+            self.assertFalse(hidden["includeIgnoredRows"])
+            self.assertTrue(full["includeIgnoredRows"])
+            self.assertEqual(hidden["filter"]["ignoredRows"], 1)
+            self.assertEqual(full["filter"]["ignoredRows"], 1)
+            hidden_row_3 = [row for row in hidden["rows"] if row["index"] == 3]
+            self.assertEqual(len(hidden_row_3), 1)
+            self.assertTrue(hidden_row_3[0]["extra"])
+            self.assertEqual(hidden_row_3[0]["cells"][0]["value"], "")
+            self.assertIn(3, {row["index"] for row in full["rows"]})
+
+    def test_import_metadata_options_api_reads_existing_conditions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "battery"
+            condition_path = root / "Project_Abstract" / "conditions.csv"
+            condition_path.parent.mkdir(parents=True)
+            condition_path.write_text(
+                "Sample,date,종류,전해질,Binder,Voltage range,ratio,Areal mass density\n"
+                "sample 1,260627,LIB,1.0M LiPF6,CMC/SBR,0.01~2V,0.95,7.1\n",
+                encoding="utf-8",
+            )
+            client, stack = self.patched_client(root)
+            with stack, patch.object(routes, "BATTERY_CONDITION_WORKBOOK", condition_path):
+                response = client.get("/battery/api/import/metadata-options")
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.get_json()
+            self.assertTrue(payload["ok"])
+            self.assertIn("date", payload["required_fields"])
+            self.assertIn("sample 1", payload["options"]["sample"])
+            self.assertIn("1.0M LiPF6", payload["options"]["electrolyte"])
 
     def test_jobs_api_reports_unavailable_without_main_app_db(self):
         with tempfile.TemporaryDirectory() as tmp:
