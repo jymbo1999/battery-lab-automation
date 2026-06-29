@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import csv
 import json
+import logging
 import re
 import shutil
+import time
 import uuid
 from dataclasses import asdict, dataclass, fields, replace
 from datetime import datetime, timezone
@@ -24,6 +26,8 @@ from .models import MetricRecord
 from .plots import write_dataset_plot
 from .wonatech_service import convert_wonatech_file, is_wonatech_source
 
+
+logger = logging.getLogger("battery_lab.import")
 
 ALLOWED_IMPORT_SUFFIXES = {".sde", ".seo", ".wrd", ".csv", ".xlsx", ".xls"}
 ASSIGNMENT_LABELS = {
@@ -264,6 +268,16 @@ def build_draft_file(
     parser_meta_path = ""
     raw_timeseries_path = ""
 
+    timings: dict[str, float] = {}
+    t_start = time.perf_counter()
+
+    def _mark(stage: str, since: float) -> float:
+        now = time.perf_counter()
+        timings[stage] = now - since
+        return now
+
+    t_cursor = t_start
+
     if is_wonatech_source(raw_path):
         # WRD -> capacity summary conversion.
         #
@@ -288,14 +302,30 @@ def build_draft_file(
         processed_path = str(conversion.primary_csv_path)
         parser_meta_path = str(conversion.meta_path)
         raw_timeseries_path = str(conversion.raw_csv_path) if conversion.raw_csv_path else ""
+        t_cursor = _mark("wonatech_convert", t_cursor)
 
     dataset = parse_file(parse_path)
+    t_cursor = _mark("parse_file", t_cursor)
     record = compute_metrics(dataset)
     assignment = infer_assignment(dataset.meta.analysis_type, record.metrics, dataset.meta.time_point, raw_path.name)
+    t_cursor = _mark("metrics_assign", t_cursor)
     plot_path = write_dataset_plot(dataset, preview_dir)
     plot_meta_path = plot_path.with_name(plot_path.name + ".meta.json") if plot_path else None
+    t_cursor = _mark("write_plot", t_cursor)
     stat = raw_path.stat()
     sha256 = sha256_file(raw_path)
+    t_cursor = _mark("sha256", t_cursor)
+
+    total = time.perf_counter() - t_start
+    logger.warning(
+        "[IMPORT_TIME] file=%s type=%s size=%dB total=%.2fs %s",
+        raw_path.name,
+        dataset.meta.analysis_type,
+        int(stat.st_size),
+        total,
+        " ".join(f"{stage}={dt:.2f}s" for stage, dt in timings.items()),
+    )
+
     return DraftImportFile(
         file_id=f"{safe_filename(raw_path.stem)}__{sha256[:12]}",
         original_filename=original_filename,

@@ -1828,12 +1828,28 @@ def capacity_sample_label(
         or dataset.meta.cell_id
         or Path(relative_path).stem
     )
-    return f"{sample} (ICE={format_capacity_ice(metrics)}, density={format_electrode_density(condition)})"
+    return (
+        f"{sample} (ICE={format_capacity_ice(metrics)}, "
+        f"areal={format_areal_mass_density(condition)}, "
+        f"density={format_electrode_density(condition)})"
+    )
 
 
 def format_capacity_ice(metrics: dict[str, Any]) -> str:
     ice = to_float(metrics.get("ice_percent") or metrics.get("ce_1st"))
     return "?" if ice is None else f"{ice:.1f}%"
+
+
+def format_areal_mass_density(condition: dict[str, Any]) -> str:
+    areal = first_numeric_condition_value(
+        condition,
+        [
+            "areal_mass_density",
+            "면적당로딩",
+            "areal_mass_density_mg_cm2",
+        ],
+    )
+    return "?" if areal is None else f"{areal:.3g} mg/cm2"
 
 
 def format_electrode_density(condition: dict[str, Any]) -> str:
