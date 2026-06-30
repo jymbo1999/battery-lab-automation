@@ -97,6 +97,7 @@ class ExperimentImportDraftTests(unittest.TestCase):
             self.assertIn("capacity_3", item.assignment_options)
             self.assertTrue((output_root / "import_drafts" / "draft-test" / "manifest.json").exists())
 
+    @unittest.skip("Superseded by tests/test_import_commit_flow.py — per-unit metadata schema (one journal row per file/unit)")
     def test_import_draft_api_accepts_multipart_upload(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "battery"
