@@ -25,14 +25,18 @@ from .ai_service import ai_status_payload, get_ai_run, run_ai_smoke
 from .capacity_csv_audit import audit_capacity_csv_wrd_pairs
 from .excel_dashboard import DEFAULT_CONDITION_SHEET, WorkbookStore, parse_positive_int, render_page as render_excel_dashboard_page
 from .experiment_import import (
+    BINDER_PRESETS,
+    IMPORT_JOURNAL_FIELDS,
     REQUIRED_IMPORT_FIELDS,
     append_import_draft_files,
     build_import_draft_cluster_preview,
     commit_import_draft,
     create_import_draft,
+    list_row_units,
     load_import_draft,
     manifest_payload,
     metadata_options_from_conditions,
+    preview_normalized_names,
     remove_import_draft_file,
     update_import_draft_assignments,
     update_import_draft_metadata,
@@ -151,6 +155,7 @@ def _import_draft_payload(manifest) -> dict:
             )
         else:
             item["plot_url"] = ""
+    payload["units"] = list_row_units(manifest.files)
     return payload
 
 
@@ -263,18 +268,42 @@ def import_metadata_options_api():
     )
 
 
-@blueprint.patch("/api/import/drafts/<draft_id>/metadata")
-def update_import_draft_metadata_api(draft_id: str):
+@blueprint.get("/api/import/field-spec")
+def import_field_spec_api():
+    return jsonify({"ok": True, "fields": IMPORT_JOURNAL_FIELDS, "binder_presets": BINDER_PRESETS})
+
+
+@blueprint.patch("/api/import/drafts/<draft_id>/units/<unit_id>/metadata")
+def update_import_draft_metadata_api(draft_id: str, unit_id: str):
     payload = request.get_json(silent=True) or {}
     metadata = payload.get("metadata") or {}
     if not isinstance(metadata, dict):
         return jsonify({"ok": False, "error": "metadata must be an object."}), 400
     try:
-        manifest = update_import_draft_metadata(BATTERY_OUTPUT_ROOT, draft_id, metadata)
+        manifest = update_import_draft_metadata(BATTERY_OUTPUT_ROOT, draft_id, unit_id, metadata)
     except FileNotFoundError:
         return jsonify({"ok": False, "error": "Draft manifest not found."}), 404
+    entry = (manifest.unit_metadata or {}).get(unit_id) or {}
     response = _import_draft_payload(manifest)
-    return jsonify({"ok": manifest.metadata_status == "ready", **response})
+    return jsonify(
+        {
+            "ok": entry.get("metadata_status") == "ready",
+            **response,
+            "unit_id": unit_id,
+            "unit_metadata_status": entry.get("metadata_status"),
+            "unit_metadata_errors": entry.get("metadata_errors") or [],
+        }
+    )
+
+
+@blueprint.get("/api/import/drafts/<draft_id>/normalized-names")
+def import_draft_normalized_names_api(draft_id: str):
+    try:
+        manifest = load_import_draft(BATTERY_OUTPUT_ROOT, draft_id)
+    except FileNotFoundError:
+        return jsonify({"ok": False, "error": "Draft manifest not found."}), 404
+    rows = preview_normalized_names(manifest, BATTERY_CONDITION_WORKBOOK, DEFAULT_CONDITION_SHEET)
+    return jsonify({"ok": True, "rows": rows})
 
 
 @blueprint.get("/api/import/drafts/<draft_id>/cluster-preview")

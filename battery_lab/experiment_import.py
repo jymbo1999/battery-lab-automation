@@ -1040,23 +1040,67 @@ def metadata_options_from_conditions(conditions: dict[str, dict[str, object]], *
     return options
 
 
+def preview_normalized_names(
+    manifest: DraftImportManifest,
+    condition_workbook: Path,
+    condition_sheet: str,
+) -> list[dict[str, object]]:
+    """Predict each file's raw -> normalized filename, using the sequential next
+    rows the commit will assign (one row per unit). The journal row is unknown
+    until commit, so this is a best-effort preview confirmed by the commit result."""
+    next_row = 1
+    if condition_workbook.exists():
+        workbook = load_workbook(condition_workbook)
+        if condition_sheet in workbook.sheetnames:
+            next_row = workbook[condition_sheet].max_row + 1
+        workbook.close()
+    units = list_row_units(list(manifest.files))
+    unit_meta = manifest.unit_metadata or {}
+    by_file = {item.file_id: item for item in manifest.files}
+    rows: list[dict[str, object]] = []
+    for offset, unit in enumerate(units):
+        row = next_row + offset
+        meta = (unit_meta.get(unit["unit_id"]) or {}).get("metadata") or {}
+        for file_id in unit["file_ids"]:
+            item = by_file[file_id]
+            normalized = final_filename_for_item(item, meta, row, Path(item.raw_path).suffix)
+            rows.append(
+                {
+                    "unit_id": unit["unit_id"],
+                    "file_id": file_id,
+                    "raw_name": item.original_filename,
+                    "normalized_name": normalized,
+                    "predicted_row": row,
+                    "assignment": item.assignment,
+                }
+            )
+    return rows
+
+
 def build_import_draft_cluster_preview(
     output_root: Path,
     draft_id: str,
     conditions: dict[str, dict[str, object]],
 ) -> dict[str, object]:
     manifest = load_import_draft(output_root, draft_id)
-    metadata = manifest.metadata or {}
+    unit_meta = manifest.unit_metadata or {}
     rows = []
     for item in manifest.files:
-        rows.append(cluster_preview_row(item, metadata, manifest.metadata_status, conditions))
+        entry = unit_meta.get(unit_id_for_file(item)) or {}
+        meta = entry.get("metadata") or {}
+        status = entry.get("metadata_status") or "missing"
+        rows.append(cluster_preview_row(item, meta, status, conditions))
+    units = list_row_units(list(manifest.files))
+    all_ready = bool(units) and all(
+        (unit_meta.get(unit["unit_id"]) or {}).get("metadata_status") == "ready" for unit in units
+    )
     summary: dict[str, int] = {}
     for row in rows:
         summary[row["status"]] = summary.get(row["status"], 0) + 1
     return {
         "draft_id": manifest.draft_id,
-        "metadata_status": manifest.metadata_status,
-        "metadata_errors": manifest.metadata_errors or [],
+        "metadata_status": "ready" if all_ready else "missing",
+        "metadata_errors": [],
         "rows": rows,
         "summary": summary,
     }
