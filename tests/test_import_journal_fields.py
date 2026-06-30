@@ -98,5 +98,47 @@ class ValidateMetadataTests(unittest.TestCase):
         self.assertIn("sample", cleaned)
 
 
+import tempfile
+from pathlib import Path
+from openpyxl import Workbook, load_workbook
+from battery_lab.experiment_import import append_journal_row
+
+
+class JournalWriterTests(unittest.TestCase):
+    def _make_book(self, path):
+        wb = Workbook(); ws = wb.active; ws.title = "JYJ"
+        ws.append(["참고", "전해질", "종류", "Date", "Sample", "Conductive agent", "Binder",
+                   "Current (A)", "Active material (g)", "CV (uA)", "Cut capacity (Ah)", "Voltage range",
+                   "Cell 자리", "Theoretical capacity (mAh/g)", "C-Rate (1/h)", "foil+electrode (g)",
+                   "foil (g)", "ratio", "Current density (mA/g)", "Areal mass density (mg/cｍ2)",
+                   "전극(foil+electrode) 두께(mm)", "호일 두께(mm)", "전극 두께(mm)", "electrode(g)",
+                   "volume (mm3)", "합제밀도(g/cm3)"])
+        wb.save(path); wb.close()
+
+    def test_writes_thickness_to_correct_distinct_columns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "j.xlsx"; self._make_book(p)
+            metadata = {"sample": "A", "foil_electrode_g": "0.0150", "foil_g": "0.009928",
+                        "ratio": "0.96", "foil_electrode_mm": "0.020", "foil_thickness_mm": "0.00958",
+                        "reference": "12 파이_Cu foil"}
+            row = append_journal_row(p, "JYJ", metadata)
+            wb = load_workbook(p); ws = wb["JYJ"]
+            self.assertEqual(row, 2)
+            self.assertEqual(ws.cell(row=2, column=21).value, "0.020")  # 전극(foil+electrode) 두께(mm)
+            self.assertEqual(ws.cell(row=2, column=22).value, "0.00958")  # 호일 두께(mm) — no 'mm' collision
+            self.assertEqual(ws.cell(row=2, column=1).value, "12 파이_Cu foil")
+            wb.close()
+
+    def test_areal_density_written_as_numeric_literal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "j.xlsx"; self._make_book(p)
+            metadata = {"sample": "A", "foil_electrode_g": "0.0150", "foil_g": "0.009928", "ratio": "0.96"}
+            append_journal_row(p, "JYJ", metadata)
+            wb = load_workbook(p, data_only=True); ws = wb["JYJ"]
+            self.assertIsInstance(ws.cell(row=2, column=20).value, float)  # Areal mass density literal
+            self.assertGreater(ws.cell(row=2, column=20).value, 0)
+            wb.close()
+
+
 if __name__ == "__main__":
     unittest.main()

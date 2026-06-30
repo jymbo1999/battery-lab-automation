@@ -659,6 +659,43 @@ def summary_metric_key(row: dict[str, object]) -> tuple[str, str, str]:
     return (str(row.get("analysis_type") or ""), str(row.get("source_file") or ""), str(row.get("cell_id") or ""))
 
 
+def header_column_map(worksheet) -> dict[str, int]:
+    """Map EXACT header text -> column index (1-based)."""
+    out: dict[str, int] = {}
+    for col in range(1, worksheet.max_column + 1):
+        header = worksheet.cell(row=1, column=col).value
+        if header not in (None, ""):
+            out[str(header).strip()] = col
+    return out
+
+
+def column_by_condition_key(worksheet, key: str) -> int | None:
+    for col in range(1, worksheet.max_column + 1):
+        if condition_column(worksheet.cell(row=1, column=col).value) == key:
+            return col
+    return None
+
+
+def write_journal_row(worksheet, row: int, metadata: dict[str, object]) -> None:
+    """Write one journal row by EXACT header, apply display formulas, then
+    overwrite the app-read columns (areal_mass_density, electrode_density)
+    with Python literals so data_only reads return numbers immediately."""
+    by_header = header_column_map(worksheet)
+    for field in IMPORT_JOURNAL_FIELDS:
+        value = metadata.get(field["key"])
+        if value in (None, ""):
+            continue
+        col = by_header.get(field["header"])
+        if col:
+            worksheet.cell(row=row, column=col).value = value
+    apply_row_formulas(worksheet, row)
+    derived = compute_derived_metadata(metadata)
+    for key in ("areal_mass_density", "electrode_density"):
+        col = column_by_condition_key(worksheet, key)
+        if col and derived.get(key) is not None:
+            worksheet.cell(row=row, column=col).value = derived[key]
+
+
 def append_journal_row(condition_workbook: Path, condition_sheet: str, metadata: dict[str, object]) -> int:
     condition_workbook.parent.mkdir(parents=True, exist_ok=True)
     workbook = load_workbook(condition_workbook)
@@ -667,12 +704,7 @@ def append_journal_row(condition_workbook: Path, condition_sheet: str, metadata:
         raise KeyError(f"Sheet not found: {condition_sheet}")
     worksheet = workbook[condition_sheet]
     row = worksheet.max_row + 1
-    header_map = {condition_column(worksheet.cell(row=1, column=col).value): col for col in range(1, worksheet.max_column + 1)}
-    for key, value in metadata.items():
-        col = header_map.get(key)
-        if col:
-            worksheet.cell(row=row, column=col).value = value
-    apply_row_formulas(worksheet, row)
+    write_journal_row(worksheet, row, metadata)
     workbook.save(condition_workbook)
     workbook.close()
     return row
