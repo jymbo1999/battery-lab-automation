@@ -117,6 +117,15 @@
   .battery-metadata-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   .battery-metadata-grid label { display: grid; gap: 5px; font-size: 12px; color: #526071; }
   .battery-metadata-grid input { width: 100%; min-height: 34px; border: 1px solid #a8b3c2; border-radius: 7px; padding: 5px 8px; }
+  .biw-hr-note { font-size: 12px; color: #9a3412; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 7px; padding: 7px 10px; margin: 8px 0; }
+  .biw-unit { border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+  .biw-unit-head { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 10px 12px; background: #f8fafc; border: 0; cursor: pointer; font-size: 13px; }
+  .biw-acc-caret { color: #64748b; width: 12px; flex: none; }
+  .biw-unit-name { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .biw-unit-body { padding: 12px; }
+  .biw-toggle { margin-top: 10px; background: none; border: 0; color: #2563eb; cursor: pointer; font-size: 12px; padding: 0; }
+  .biw-fixed { margin-top: 8px; padding-top: 10px; border-top: 1px dashed #e2e8f0; }
+  .biw-unit-msg { margin-top: 8px; font-size: 12px; color: #991b1b; }
   .biw-confirm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 8px 0 12px; }
   .biw-kv { border: 1px solid #e5e9f0; border-radius: 8px; padding: 8px 10px; }
   .biw-kv dt { font-size: 11px; color: #94a3b8; }
@@ -562,7 +571,7 @@
             <button class="battery-btn primary" type="button" data-role="open-import-wizard">새 실험 등록</button>
           </div>
         </div>
-        <div class="battery-import-wizard" data-upload-url="{{ url_for('battery_lab.create_import_draft_api') }}" data-metadata-options-url="{{ url_for('battery_lab.import_metadata_options_api') }}">
+        <div class="battery-import-wizard" data-upload-url="{{ url_for('battery_lab.create_import_draft_api') }}" data-metadata-options-url="{{ url_for('battery_lab.import_metadata_options_api') }}" data-field-spec-url="{{ url_for('battery_lab.import_field_spec_api') }}">
           <button class="battery-wizard-close" type="button" data-role="close-import-wizard" aria-label="닫기">&times;</button>
           <input type="file" data-role="file-input" accept=".sde,.seo,.wrd,.csv,.xlsx,.xls" multiple hidden>
           <div class="biw-steps">
@@ -580,6 +589,7 @@
             <div class="battery-import-options">
               <label><input type="checkbox" data-role="write-raw" value="1"> WRD raw time-series CSV도 생성</label>
             </div>
+            <div class="biw-hr-note">⚠ <b>EIS 시계열</b> 데이터는 파일명에 <code>_hr</code> 표기를 반드시 포함해 주세요 (예: <code>..._3hr_02.SEO</code>). 시계열은 같은 셀의 여러 시점이 한 행으로 묶입니다.</div>
             <div class="battery-match-message" data-role="upload-message">원본 파일을 올리면 파서·지표·미리보기를 만들고 타입을 자동 분류합니다. 각 파일 오른쪽에서 타입을 바꾸거나 ×로 삭제할 수 있습니다.</div>
             <div class="battery-import-errors" data-role="import-errors"></div>
             <div class="biw-footer">
@@ -590,25 +600,9 @@
           <section class="biw-panel" data-step="2" hidden>
             <div class="biw-section-title">미리보기</div>
             <div class="biw-preview" data-role="preview-boxes"></div>
-            <form data-role="metadata-form">
-              <div class="biw-section-title">실험정보 <span class="battery-muted" style="font-weight:400;font-size:12px">— 실험일지 한 행에 들어갈 한 세트</span></div>
-              <div class="battery-metadata-grid">
-                <label>date<input name="date" list="metadata-options-date" placeholder="260627" required></label>
-                <label>sample<input name="sample" list="metadata-options-sample" placeholder="sample / cell id" required></label>
-                <label>cell type<input name="cell_type" list="metadata-options-cell_type" placeholder="LIB" required></label>
-                <label>electrolyte<input name="electrolyte" list="metadata-options-electrolyte" required></label>
-                <label>binder<input name="binder" list="metadata-options-binder" required></label>
-                <label>voltage range<input name="voltage_range" list="metadata-options-voltage_range" required></label>
-                <label>ratio<input name="ratio" list="metadata-options-ratio" required></label>
-                <label>areal mass density<input name="areal_mass_density" list="metadata-options-areal_mass_density" required></label>
-                <label>sample group<input name="sample_group" list="metadata-options-sample_group"></label>
-                <label>material family<input name="material_family" list="metadata-options-material_family"></label>
-                <label>treatment<input name="treatment" list="metadata-options-treatment"></label>
-                <label>note<input name="note"></label>
-              </div>
-              <div data-role="metadata-datalists"></div>
-            </form>
-            <div class="battery-match-message" data-role="metadata-message">과거 조건값을 빠르게 선택할 수 있습니다.</div>
+            <div class="biw-section-title">실험정보 <span class="battery-muted" style="font-weight:400;font-size:12px">— 파일(셀)마다 한 행이 됩니다. 자주 바뀌는 4칸만 채우면 됩니다.</span></div>
+            <div data-role="unit-forms"></div>
+            <div class="battery-match-message" data-role="metadata-message"></div>
             <div class="biw-footer">
               <button class="battery-btn biw-spacer" type="button" data-role="back-step1">← 뒤로</button>
               <button class="battery-btn primary" type="button" data-role="goto-step3">최종 확인 →</button>
@@ -676,7 +670,10 @@
       metadata_required: "실험정보 필요",
       excluded: "제외",
     };
-    const metadataFieldOrder = ["date", "sample", "cell_type", "electrolyte", "binder", "voltage_range", "ratio", "areal_mass_density", "sample_group", "material_family", "treatment", "note"];
+    const VARIABLE_KEYS = ["date", "sample", "foil_electrode_g", "foil_electrode_mm"];
+    const VARIABLE_LABELS = {date: "Date", sample: "Sample", foil_electrode_g: "foil+electrode (g)", foil_electrode_mm: "전극(foil+electrode) 두께(mm)"};
+    let fieldSpec = null;
+    const fileMtimes = {};
 
     const el = (role) => wizard.querySelector(`[data-role="${role}"]`);
     const fileInput = el("file-input");
@@ -688,8 +685,7 @@
     const errors = el("import-errors");
     const gotoStep2 = el("goto-step2");
     const previewBoxes = el("preview-boxes");
-    const metadataForm = el("metadata-form");
-    const metadataDatalists = el("metadata-datalists");
+    const unitForms = el("unit-forms");
     const metadataMessage = el("metadata-message");
     const gotoStep3 = el("goto-step3");
     const confirmMeta = el("confirm-meta");
@@ -720,34 +716,92 @@
       });
     }
 
-    async function loadMetadataOptions() {
-      if (wizard.__metadataOptionsLoaded) return;
-      wizard.__metadataOptionsLoaded = true;
+    async function loadFieldSpec() {
+      if (fieldSpec) return fieldSpec;
       try {
-        const response = await fetch(wizard.dataset.metadataOptionsUrl, {headers: {"Accept": "application/json"}});
+        const response = await fetch(wizard.dataset.fieldSpecUrl, {headers: {"Accept": "application/json"}});
         const payload = await response.json().catch(() => ({}));
-        if (!response.ok || !payload.ok) return;
-        metadataDatalists.innerHTML = Object.entries(payload.options || {}).map(([field, values]) => `
-          <datalist id="metadata-options-${escapeHtml(field)}">
-            ${(values || []).map((value) => `<option value="${escapeHtml(value)}"></option>`).join("")}
-          </datalist>`).join("");
-      } catch (error) { /* options are optional */ }
+        if (response.ok && payload.ok) fieldSpec = payload;
+      } catch (error) { /* surfaced on render */ }
+      return fieldSpec;
     }
 
-    function collectMetadata() {
+    function ymdFromMs(ms) {
+      if (!ms) return "";
+      const d = new Date(ms);
+      return `${String(d.getFullYear()).slice(2)}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+    }
+
+    function fieldInputHtml(field, idx) {
+      const name = `u${idx}__${field.key}`;
+      if (field.key === "binder") {
+        const presets = (fieldSpec && fieldSpec.binder_presets) || [];
+        const options = presets.map((value) => `<option value="${escapeHtml(value)}"></option>`).join("");
+        return `<label>${escapeHtml(field.header)}<input name="${name}" list="biw-binder-presets" value="${escapeHtml(field.default)}">
+          <datalist id="biw-binder-presets">${options}</datalist></label>`;
+      }
+      return `<label>${escapeHtml(field.header)}<input name="${name}" value="${escapeHtml(field.default)}"></label>`;
+    }
+
+    function unitFormHtml(unit, idx) {
+      const fixed = ((fieldSpec && fieldSpec.fields) || []).filter((f) => f.bucket === "fixed");
+      const dateDefault = ymdFromMs(fileMtimes[unit.representative_filename]);
+      const variableHtml = VARIABLE_KEYS.map((key) => {
+        const value = key === "date" ? dateDefault : "";
+        const placeholder = key === "date" ? "YYMMDD" : "";
+        return `<label>${escapeHtml(VARIABLE_LABELS[key])}<input name="u${idx}__${key}" value="${escapeHtml(value)}" placeholder="${placeholder}"></label>`;
+      }).join("");
+      const fixedHtml = fixed.map((f) => fieldInputHtml(f, idx)).join("");
+      const tsBadge = unit.is_time_series ? `<span class="biw-chip">시계열 ${unit.file_ids.length}개</span>` : "";
+      return `
+        <div class="biw-unit" data-unit-idx="${idx}" data-unit-id="${escapeHtml(unit.unit_id)}">
+          <button type="button" class="biw-unit-head" data-acc="${idx}">
+            <span class="biw-acc-caret">${idx === 0 ? "▾" : "▸"}</span>
+            <span class="biw-unit-name">${escapeHtml(unit.representative_filename)}</span>
+            ${tsBadge}<span class="biw-chip">${escapeHtml(assignmentLabel(unit.assignment))}</span>
+          </button>
+          <div class="biw-unit-body" data-body="${idx}" ${idx === 0 ? "" : "hidden"}>
+            <div class="battery-metadata-grid">${variableHtml}</div>
+            <button type="button" class="biw-toggle" data-fixed="${idx}">▸ 고정값 12칸 보기/수정</button>
+            <div class="biw-fixed" data-fixedbody="${idx}" hidden><div class="battery-metadata-grid">${fixedHtml}</div></div>
+            <div class="biw-unit-msg" data-unitmsg="${idx}"></div>
+          </div>
+        </div>`;
+    }
+
+    function renderUnitForms() {
+      const units = (currentPayload && currentPayload.units) || [];
+      if (!fieldSpec) { unitForms.innerHTML = '<div class="biw-empty">실험정보 양식을 불러오지 못했습니다.</div>'; return; }
+      unitForms.innerHTML = units.map((unit, idx) => unitFormHtml(unit, idx)).join("") || '<div class="biw-empty">등록할 파일이 없습니다.</div>';
+      unitForms.querySelectorAll("[data-acc]").forEach((btn) => btn.addEventListener("click", () => toggleUnit(Number(btn.dataset.acc))));
+      unitForms.querySelectorAll("[data-fixed]").forEach((btn) => btn.addEventListener("click", () => {
+        const body = unitForms.querySelector(`[data-fixedbody="${btn.dataset.fixed}"]`);
+        const opening = body.hidden;
+        body.hidden = !opening;
+        btn.textContent = opening ? "▾ 고정값 12칸 접기" : "▸ 고정값 12칸 보기/수정";
+      }));
+    }
+
+    function toggleUnit(openIdx) {
+      unitForms.querySelectorAll(".biw-unit").forEach((unitEl) => {
+        const idx = Number(unitEl.dataset.unitIdx);
+        const body = unitEl.querySelector(`[data-body="${idx}"]`);
+        const caret = unitEl.querySelector(".biw-acc-caret");
+        const open = idx === openIdx ? body.hidden : false;
+        body.hidden = !open;
+        if (caret) caret.textContent = open ? "▾" : "▸";
+      });
+    }
+
+    function collectUnitMetadata(idx) {
       const metadata = {};
-      Array.from(metadataForm.elements).forEach((field) => {
-        if (!field.name) return;
-        const value = String(field.value || "").trim();
-        if (value) metadata[field.name] = value;
+      const prefix = `u${idx}__`;
+      unitForms.querySelectorAll(`[name^="${prefix}"]`).forEach((input) => {
+        const key = input.name.slice(prefix.length);
+        const value = String(input.value || "").trim();
+        if (value) metadata[key] = value;
       });
       return metadata;
-    }
-    function fillMetadataForm(metadata) {
-      Object.entries(metadata || {}).forEach(([key, value]) => {
-        const input = metadataForm.elements[key];
-        if (input) input.value = value ?? "";
-      });
     }
 
     function renderFileList() {
@@ -781,6 +835,7 @@
     async function uploadFiles(fileObjs, {append}) {
       const list = Array.from(fileObjs || []);
       if (!list.length) return;
+      list.forEach((file) => { fileMtimes[file.name] = file.lastModified; });
       const body = new FormData();
       list.forEach((file) => body.append("files", file));
       if (writeRaw && writeRaw.checked) body.append("write_raw_wrd", "1");
@@ -900,28 +955,33 @@
       } catch (error) { /* status annotation is optional */ }
     }
 
-    function renderConfirm() {
-      const metadata = (currentPayload && currentPayload.metadata) || {};
-      confirmMeta.innerHTML = metadataFieldOrder.filter((field) => metadata[field]).map((field) => `
-        <dl class="biw-kv"><dt>${escapeHtml(field)}</dt><dd>${escapeHtml(metadata[field])}</dd></dl>`).join("") || '<div class="biw-empty">실험정보가 없습니다.</div>';
-      const files = ((currentPayload && currentPayload.files) || []).filter((f) => fileAssignment(f) !== "exclude");
-      confirmCount.textContent = files.length;
-      confirmFiles.innerHTML = files.map((file) => {
-        const row = clusterRows[file.original_filename] || clusterRows[(file.raw_path || "").split("/").pop()];
-        const status = row ? (clusterStatusLabels[row.status] || row.status) : "";
-        return `
-          <div class="biw-confirm-file">
-            <span class="biw-cf-name">${escapeHtml(file.original_filename)}</span>
-            <span class="biw-chip">${escapeHtml(assignmentLabel(fileAssignment(file)))}</span>
-            ${status ? `<span class="biw-chip">${escapeHtml(status)}</span>` : ""}
-          </div>`;
-      }).join("") || '<div class="biw-empty">저장할 파일이 없습니다.</div>';
+    async function renderConfirm() {
+      const draftId = currentPayload && currentPayload.draft_id;
+      const units = (currentPayload && currentPayload.units) || [];
+      confirmMeta.innerHTML = units.map((unit) => {
+        const cluster = clusterRows[unit.representative_filename];
+        const label = cluster ? (clusterStatusLabels[cluster.status] || cluster.status) : "";
+        const extra = unit.is_time_series ? ` (+${unit.file_ids.length - 1} 시점)` : "";
+        return `<dl class="biw-kv"><dt>${escapeHtml(unit.representative_filename)}${extra}</dt><dd>${escapeHtml(assignmentLabel(unit.assignment))}${label ? ` · ${escapeHtml(label)}` : ""}</dd></dl>`;
+      }).join("") || '<div class="biw-empty">등록할 행이 없습니다.</div>';
+      let rows = [];
+      try {
+        const response = await fetch(`${uploadUrl}/${encodeURIComponent(draftId)}/normalized-names`, {headers: {"Accept": "application/json"}});
+        const payload = await response.json().catch(() => ({}));
+        rows = payload.rows || [];
+      } catch (error) { /* preview only */ }
+      confirmCount.textContent = rows.length;
+      confirmFiles.innerHTML = rows.map((row) => `
+        <div class="biw-confirm-file">
+          <span class="biw-cf-name">${escapeHtml(row.raw_name)} <b>→</b> ${escapeHtml(row.normalized_name)}</span>
+          <span class="biw-chip">행 ${escapeHtml(row.predicted_row)}</span>
+        </div>`).join("") || '<div class="biw-empty">저장할 파일이 없습니다.</div>';
     }
 
     if (openButton) {
       openButton.addEventListener("click", () => {
         wizard.classList.add("open");
-        loadMetadataOptions();
+        loadFieldSpec();
         showStep(1);
         renderFileList();
       });
@@ -949,11 +1009,10 @@
       uploadFiles(event.dataTransfer.files, {append});
     });
 
-    metadataForm.addEventListener("submit", (event) => event.preventDefault());
     el("back-step1").addEventListener("click", () => showStep(1));
     el("back-step2").addEventListener("click", () => showStep(2));
 
-    gotoStep2.addEventListener("click", () => {
+    gotoStep2.addEventListener("click", async () => {
       if (!(currentPayload && currentPayload.files && currentPayload.files.length)) return;
       fileList.querySelectorAll(".biw-file-row").forEach((row) => {
         const file = currentPayload.files.find((item) => item.file_id === row.dataset.fileId);
@@ -961,34 +1020,49 @@
         if (file && select) file.assignment = select.value;
       });
       renderPreview();
-      fillMetadataForm((currentPayload && currentPayload.metadata) || {});
+      await loadFieldSpec();
+      renderUnitForms();
       showStep(2);
     });
 
     gotoStep3.addEventListener("click", async () => {
       const draftId = currentPayload && currentPayload.draft_id;
       if (!draftId) return;
+      const units = (currentPayload && currentPayload.units) || [];
       metadataMessage.textContent = "실험정보를 저장하는 중...";
-      try {
-        const response = await fetch(`${uploadUrl}/${encodeURIComponent(draftId)}/metadata`, {
-          method: "PATCH", headers: {"Content-Type": "application/json", "Accept": "application/json"},
-          body: JSON.stringify({metadata: collectMetadata()}),
-        });
-        const payload = await response.json().catch(() => ({}));
-        currentPayload = payload;
-        if (!payload.ok || payload.metadata_status !== "ready") {
-          metadataMessage.textContent = `입력 확인 필요: ${(payload.metadata_errors || ["필수 항목을 채워주세요."]).join(" · ")}`;
-          return;
+      let firstBad = null;
+      for (let idx = 0; idx < units.length; idx++) {
+        const unit = units[idx];
+        const msgEl = unitForms.querySelector(`[data-unitmsg="${idx}"]`);
+        try {
+          const response = await fetch(`${uploadUrl}/${encodeURIComponent(draftId)}/units/${encodeURIComponent(unit.unit_id)}/metadata`, {
+            method: "PATCH", headers: {"Content-Type": "application/json", "Accept": "application/json"},
+            body: JSON.stringify({metadata: collectUnitMetadata(idx)}),
+          });
+          const payload = await response.json().catch(() => ({}));
+          currentPayload = payload;
+          if (!payload.ok || payload.unit_metadata_status !== "ready") {
+            if (firstBad === null) firstBad = idx;
+            if (msgEl) msgEl.textContent = `확인 필요: ${(payload.unit_metadata_errors || ["필수 항목을 채워주세요."]).join(" · ")}`;
+          } else if (msgEl) {
+            msgEl.textContent = "";
+          }
+        } catch (error) {
+          if (firstBad === null) firstBad = idx;
+          if (msgEl) msgEl.textContent = "저장 중 오류가 발생했습니다.";
         }
-        metadataMessage.textContent = "실험정보 저장됨.";
-        await loadClusterPreview();
-        renderConfirm();
-        commitButton.disabled = false;
-        commitMessage.textContent = "‘실험일지 xlsx에 저장하기’를 누르면 새 행 추가 + 파일 정리 저장 + 그래프/매칭 갱신이 함께 실행됩니다.";
-        showStep(3);
-      } catch (error) {
-        metadataMessage.textContent = "실험정보 저장 중 오류가 발생했습니다.";
       }
+      if (firstBad !== null) {
+        metadataMessage.textContent = "일부 파일의 실험정보를 확인해 주세요.";
+        toggleUnit(firstBad);
+        return;
+      }
+      metadataMessage.textContent = "실험정보 저장됨.";
+      await loadClusterPreview();
+      await renderConfirm();
+      commitButton.disabled = false;
+      commitMessage.textContent = "‘실험일지 xlsx에 저장하기’를 누르면 파일마다 새 행 추가 + 파일 정리 저장 + 그래프/매칭 갱신이 함께 실행됩니다.";
+      showStep(3);
     });
 
     commitButton.addEventListener("click", async () => {
@@ -1006,7 +1080,7 @@
         }
         currentPayload = payload;
         wizard.querySelectorAll("[data-step-pill]").forEach((pill) => pill.classList.add("done"));
-        commitMessage.textContent = `저장 완료 · 실험일지 row ${payload.journal_row || "-"} · 파일 ${(payload.saved_files || []).length}개. 새로고침합니다...`;
+        commitMessage.textContent = `저장 완료 · 새 행 ${(payload.journal_rows || []).length}개 · 파일 ${(payload.saved_files || []).length}개. 새로고침합니다...`;
         setTimeout(() => window.location.reload(), 1300);
       } catch (error) {
         commitButton.disabled = false;
