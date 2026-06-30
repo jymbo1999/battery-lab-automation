@@ -15,6 +15,8 @@ from .eis_matching import EIS_SUFFIXES, build_eis_match_report, compact_date
 from .file_io import parse_file
 from .metrics import to_float
 from .plots import eis_fit_svg
+from . import config
+from . import perf
 from . import render_cache
 from . import ui as streamlit_ui
 from wonatech_parsers.wrd import build_capacity_summary, parse_wrd_file
@@ -118,8 +120,12 @@ def eis_overlay_payload(
     key: str,
     show_fit: bool = False,
 ) -> dict[str, Any]:
+    marks: dict[str, Any] = {}
+    total = perf.now()
     with streamlit_roots(eis_root, capacity_root):
-        source_paths, conditions, report = build_eis_viewer_report(eis_root, condition_workbook, override_path)
+        t = perf.now()
+        source_paths, conditions, report = build_eis_viewer_report(eis_root, condition_workbook, override_path, timings=marks)
+        marks["report_ms"] = perf.ms(t)
         all_rel_paths = [str(path.relative_to(eis_root)) for path in source_paths]
         title = "EIS Nyquist"
         color_mode = "comparison"
@@ -156,13 +162,20 @@ def eis_overlay_payload(
 
         member_paths = [eis_root / rel for rel in rel_paths]
         flags = {"show_fit": bool(show_fit), "label_layout": "dated_standard_v2"}
+        t = perf.now()
         ctx = render_cache.context_hash(condition_workbook, override_path)
         msig = render_cache.membersig(member_paths, eis_root)
+        marks["membersig_ms"] = perf.ms(t)
         cache_id = key or f"{mode}:all"
+        t = perf.now()
         cached = render_cache.cluster_cache_get("eis", mode, cache_id, msig, ctx, flags)
+        marks["cache_get_ms"] = perf.ms(t)
         if cached is not None:
+            marks["cache_hit"] = True
+            perf.emit_overlay("eis", mode, key, marks, total, (eis_root, capacity_root, config.BATTERY_OUTPUT_ROOT))
             return cached
 
+        t = perf.now()
         series, errors = streamlit_ui.load_eis_overlay_series(
             rel_paths,
             report,
@@ -184,8 +197,11 @@ def eis_overlay_payload(
             show_fit=show_fit,
             performance_mode=performance_mode,
         )
+        marks["render_ms"] = perf.ms(t)
         payload = {"available": bool(html_doc), "html": html_doc, "errors": errors, "title": title, "series_count": len(series)}
         render_cache.cluster_cache_put("eis", mode, cache_id, msig, ctx, flags, payload)
+        marks["cache_hit"] = False
+        perf.emit_overlay("eis", mode, key, marks, total, (eis_root, capacity_root, config.BATTERY_OUTPUT_ROOT))
         return payload
 
 
@@ -289,8 +305,12 @@ def capacity_overlay_payload(
     mode: str,
     key: str,
 ) -> dict[str, Any]:
+    marks: dict[str, Any] = {}
+    total = perf.now()
     with streamlit_roots(eis_root, capacity_root):
-        _, summary_paths, conditions, report = build_capacity_viewer_report(capacity_root, condition_workbook, override_path)
+        t = perf.now()
+        _, summary_paths, conditions, report = build_capacity_viewer_report(capacity_root, condition_workbook, override_path, timings=marks)
+        marks["report_ms"] = perf.ms(t)
         rel_paths = [str(path.relative_to(capacity_root)) for path in summary_paths]
         title = "Capacity datasets"
         performance_mode = False
@@ -316,17 +336,27 @@ def capacity_overlay_payload(
 
         member_paths = [capacity_root / rel for rel in selected_paths]
         flags: dict = {"table_layout": "protocol_kpi_columns_v5", "cluster_layout": "journal_date_bucket_v4", "label_layout": "charge_mean_center_y_v5"}
+        t = perf.now()
         ctx = render_cache.context_hash(condition_workbook, override_path)
         msig = render_cache.membersig(member_paths, capacity_root)
+        marks["membersig_ms"] = perf.ms(t)
         cache_id = key or f"{mode}:all"
+        t = perf.now()
         cached = render_cache.cluster_cache_get("capacity", mode, cache_id, msig, ctx, flags)
+        marks["cache_get_ms"] = perf.ms(t)
         if cached is not None:
+            marks["cache_hit"] = True
+            perf.emit_overlay("capacity", mode, key, marks, total, (eis_root, capacity_root, config.BATTERY_OUTPUT_ROOT))
             return cached
 
+        t = perf.now()
         series, errors = streamlit_ui.load_capacity_overlay_series(selected_paths, report, conditions, performance_mode=performance_mode)
         html_doc = streamlit_ui.capacity_overlay_html(title, series, width=1180, height=590, performance_mode=performance_mode)
+        marks["render_ms"] = perf.ms(t)
         payload = {"available": bool(html_doc), "html": html_doc, "errors": errors, "title": title, "series_count": len(series)}
         render_cache.cluster_cache_put("capacity", mode, cache_id, msig, ctx, flags, payload)
+        marks["cache_hit"] = False
+        perf.emit_overlay("capacity", mode, key, marks, total, (eis_root, capacity_root, config.BATTERY_OUTPUT_ROOT))
         return payload
 
 
@@ -749,11 +779,21 @@ def eis_source_payload(eis_root: Path, capacity_root: Path, rel_path: str, *, sh
         return payload
 
 
-def build_eis_viewer_report(eis_root: Path, condition_workbook: Path, override_path: Path) -> tuple[list[Path], dict[str, dict[str, Any]], Any]:
+def build_eis_viewer_report(eis_root: Path, condition_workbook: Path, override_path: Path, timings: dict[str, Any] | None = None) -> tuple[list[Path], dict[str, dict[str, Any]], Any]:
+    t = perf.now()
     source_paths = streamlit_ui.collect_source_files(eis_root, EIS_SUFFIXES)
+    if timings is not None:
+        timings["walk_ms"] = perf.ms(t)
+        timings["n_files"] = len(source_paths)
+    t = perf.now()
     conditions = render_cache.cached_read_conditions(condition_workbook)
+    if timings is not None:
+        timings["conditions_ms"] = perf.ms(t)
+    t = perf.now()
     overrides = load_overrides(override_path)
     report = build_eis_match_report(source_paths, conditions, eis_root, overrides)
+    if timings is not None:
+        timings["match_ms"] = perf.ms(t)
     return source_paths, conditions, report
 
 
@@ -761,12 +801,23 @@ def build_capacity_viewer_report(
     capacity_root: Path,
     condition_workbook: Path,
     override_path: Path,
+    timings: dict[str, Any] | None = None,
 ) -> tuple[list[Path], list[Path], dict[str, dict[str, Any]], Any]:
+    t = perf.now()
     source_paths = streamlit_ui.collect_source_files(capacity_root, CAPACITY_LIVE_SUFFIXES)
     summary_paths = [path for path in streamlit_ui.collect_source_files(capacity_root, CAPACITY_SUMMARY_SUFFIXES) if streamlit_ui.is_capacity_summary_source(path)]
+    if timings is not None:
+        timings["walk_ms"] = perf.ms(t)
+        timings["n_files"] = len(source_paths) + len(summary_paths)
+    t = perf.now()
     conditions = render_cache.cached_read_conditions(condition_workbook)
+    if timings is not None:
+        timings["conditions_ms"] = perf.ms(t)
+    t = perf.now()
     overrides = load_overrides(override_path)
     report = build_capacity_match_report(summary_paths, conditions, capacity_root, overrides)
+    if timings is not None:
+        timings["match_ms"] = perf.ms(t)
     return source_paths, summary_paths, conditions, report
 
 
