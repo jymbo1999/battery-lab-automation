@@ -92,6 +92,50 @@ def fixed_defaults() -> dict[str, str]:
     return {f["key"]: f["default"] for f in IMPORT_JOURNAL_FIELDS if f["bucket"] == "fixed"}
 
 
+def _to_float(value: object) -> float | None:
+    text = str(value if value is not None else "").replace(",", "").strip()
+    if text == "":
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def compute_derived_metadata(metadata: dict[str, object]) -> dict[str, float | None]:
+    """Compute the journal's formula-column values in Python so the app can read
+    them numerically before Excel ever recalculates (read_xlsx_optional uses
+    data_only=True). Mirrors excel_dashboard.FORMULA_TEMPLATES_BY_HEADER."""
+    foil_electrode_g = _to_float(metadata.get("foil_electrode_g"))
+    foil_g = _to_float(metadata.get("foil_g"))
+    ratio = _to_float(metadata.get("ratio"))
+    foil_electrode_mm = _to_float(metadata.get("foil_electrode_mm"))
+    foil_thickness_mm = _to_float(metadata.get("foil_thickness_mm"))
+
+    active = None
+    areal = None
+    if None not in (foil_electrode_g, foil_g, ratio):
+        active = (foil_electrode_g - foil_g) * ratio
+        areal = active * 1000 / (math.pi * 0.6 ** 2)
+
+    electrode_g = None
+    electrode_density = None
+    if None not in (foil_electrode_g, foil_g):
+        electrode_g = foil_electrode_g - foil_g
+        if None not in (foil_electrode_mm, foil_thickness_mm):
+            thickness = foil_electrode_mm - foil_thickness_mm
+            volume = 113.1 * thickness
+            if volume:
+                electrode_density = electrode_g / (volume / 1000)
+
+    return {
+        "active_material_g": active,
+        "areal_mass_density": areal,
+        "electrode_g": electrode_g,
+        "electrode_density": electrode_density,
+    }
+
+
 EIS_CLUSTER_FIELDS = ("electrolyte", "binder", "voltage_range", "ratio")
 CAPACITY_CLUSTER_FIELDS = ("cell_type", "electrolyte", "binder", "voltage_range", "ratio")
 

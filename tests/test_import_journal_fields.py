@@ -35,5 +35,35 @@ class ImportJournalFieldsTests(unittest.TestCase):
         self.assertEqual(headers["cell_type"], "종류")
 
 
+import math
+from battery_lab.experiment_import import compute_derived_metadata
+
+
+class ComputeDerivedTests(unittest.TestCase):
+    def test_areal_mass_density_from_foil_inputs(self):
+        derived = compute_derived_metadata(
+            {"foil_electrode_g": "0.0150", "foil_g": "0.009928", "ratio": "0.96",
+             "foil_electrode_mm": "0.020", "foil_thickness_mm": "0.00958"}
+        )
+        active = (0.0150 - 0.009928) * 0.96
+        self.assertAlmostEqual(derived["active_material_g"], active, places=9)
+        self.assertAlmostEqual(
+            derived["areal_mass_density"], active * 1000 / (math.pi * 0.6 ** 2), places=6
+        )
+
+    def test_electrode_density_from_thickness(self):
+        derived = compute_derived_metadata(
+            {"foil_electrode_g": "0.0150", "foil_g": "0.009928", "ratio": "0.96",
+             "foil_electrode_mm": "0.020", "foil_thickness_mm": "0.00958"}
+        )
+        electrode_g = 0.0150 - 0.009928
+        thickness = 0.020 - 0.00958
+        volume = 113.1 * thickness
+        self.assertAlmostEqual(derived["electrode_density"], electrode_g / (volume / 1000), places=6)
+
+    def test_missing_inputs_yield_none(self):
+        self.assertIsNone(compute_derived_metadata({"foil_g": "0.009928"})["areal_mass_density"])
+
+
 if __name__ == "__main__":
     unittest.main()
