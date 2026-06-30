@@ -1,0 +1,39 @@
+import unittest
+from battery_lab.experiment_import import (
+    IMPORT_JOURNAL_FIELDS, field_keys, fixed_defaults, variable_keys,
+)
+
+
+class ImportJournalFieldsTests(unittest.TestCase):
+    def test_field_spec_has_16_fields_4_variable_12_fixed(self):
+        self.assertEqual(len(IMPORT_JOURNAL_FIELDS), 16)
+        self.assertEqual(len(variable_keys()), 4)
+        self.assertEqual(sum(1 for f in IMPORT_JOURNAL_FIELDS if f["bucket"] == "fixed"), 12)
+
+    def test_variable_fields_are_blank_user_filled(self):
+        self.assertEqual(
+            variable_keys(),
+            ["date", "sample", "foil_electrode_g", "foil_electrode_mm"],
+        )
+
+    def test_fixed_defaults_match_spec(self):
+        d = fixed_defaults()
+        self.assertEqual(d["reference"], "12 파이_Cu foil")
+        self.assertEqual(d["electrolyte"], "1.0M LiPF6 EC/DEC 1:1")
+        self.assertEqual(d["cell_type"], "LIB")
+        self.assertEqual(d["foil_g"], "0.009928")
+        self.assertEqual(d["ratio"], "0.96")
+        self.assertEqual(d["current_density"], "37.2")
+        self.assertEqual(d["foil_thickness_mm"], "0.00958")
+        self.assertEqual(d["drying_condition"], "60도 12시간")
+
+    def test_each_field_maps_to_exact_excel_header(self):
+        headers = {f["key"]: f["header"] for f in IMPORT_JOURNAL_FIELDS}
+        self.assertEqual(headers["foil_thickness_mm"], "호일 두께(mm)")
+        self.assertEqual(headers["foil_electrode_mm"], "전극(foil+electrode) 두께(mm)")
+        self.assertEqual(headers["reference"], "참고")
+        self.assertEqual(headers["cell_type"], "종류")
+
+
+if __name__ == "__main__":
+    unittest.main()

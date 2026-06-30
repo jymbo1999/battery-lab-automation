@@ -4,6 +4,7 @@ import hashlib
 import csv
 import json
 import logging
+import math
 import re
 import shutil
 import time
@@ -53,6 +54,44 @@ REQUIRED_METADATA_FIELDS = [
     "ratio",
     "areal_mass_density",
 ]
+# Single source of truth for the import form + journal writer.
+# Each field: stable key, EXACT Excel header (sheet JYJ), bucket, default.
+# Mapping by EXACT header avoids the condition_column 'mm' collision
+# (호일 두께/전극 두께/압연 전 두께 all normalize to 'mm').
+IMPORT_JOURNAL_FIELDS = [
+    {"key": "date", "header": "Date", "bucket": "variable", "default": ""},
+    {"key": "sample", "header": "Sample", "bucket": "variable", "default": ""},
+    {"key": "foil_electrode_g", "header": "foil+electrode (g)", "bucket": "variable", "default": ""},
+    {"key": "foil_electrode_mm", "header": "전극(foil+electrode) 두께(mm)", "bucket": "variable", "default": ""},
+    {"key": "reference", "header": "참고", "bucket": "fixed", "default": "12 파이_Cu foil"},
+    {"key": "electrolyte", "header": "전해질", "bucket": "fixed", "default": "1.0M LiPF6 EC/DEC 1:1"},
+    {"key": "cell_type", "header": "종류", "bucket": "fixed", "default": "LIB"},
+    {"key": "conductive_agent", "header": "Conductive agent", "bucket": "fixed", "default": "-"},
+    {"key": "binder", "header": "Binder", "bucket": "fixed", "default": "2wt%cmc"},
+    {"key": "voltage_range", "header": "Voltage range", "bucket": "fixed", "default": "0.01~2V"},
+    {"key": "foil_g", "header": "foil (g)", "bucket": "fixed", "default": "0.009928"},
+    {"key": "ratio", "header": "ratio", "bucket": "fixed", "default": "0.96"},
+    {"key": "current_density", "header": "Current density (mA/g)", "bucket": "fixed", "default": "37.2"},
+    {"key": "foil_thickness_mm", "header": "호일 두께(mm)", "bucket": "fixed", "default": "0.00958"},
+    {"key": "electrolyte_ul", "header": "Electrolyte (ul)", "bucket": "fixed", "default": "80"},
+    {"key": "drying_condition", "header": "Drying Condition", "bucket": "fixed", "default": "60도 12시간"},
+]
+# Binder presets offered in the form dropdown (still free-text editable).
+BINDER_PRESETS = ["2wt%cmc", "2wt%cmc/40wt%SBR"]
+
+
+def field_keys() -> list[str]:
+    return [f["key"] for f in IMPORT_JOURNAL_FIELDS]
+
+
+def variable_keys() -> list[str]:
+    return [f["key"] for f in IMPORT_JOURNAL_FIELDS if f["bucket"] == "variable"]
+
+
+def fixed_defaults() -> dict[str, str]:
+    return {f["key"]: f["default"] for f in IMPORT_JOURNAL_FIELDS if f["bucket"] == "fixed"}
+
+
 EIS_CLUSTER_FIELDS = ("electrolyte", "binder", "voltage_range", "ratio")
 CAPACITY_CLUSTER_FIELDS = ("cell_type", "electrolyte", "binder", "voltage_range", "ratio")
 
