@@ -85,6 +85,13 @@ def parsed_key(path: Path, root: Path) -> str:
     return _sha1(file_identity(path, root))
 
 
+def match_report_key(kind: str, source_paths: list[Path], root: Path, condition_workbook: Path, override_path: Path) -> str:
+    """Identity of a match report: which source files (by stat), plus the
+    condition workbook and override file. Changes whenever any input changes,
+    so a memo keyed on it is self-invalidating like the rest of the cache."""
+    return _sha1([kind, membersig(source_paths, root), context_hash(condition_workbook, override_path)])
+
+
 def cluster_key(kind: str, mode: str, cluster_id: str, member_sig: str, ctx_hash: str, flags: dict) -> str:
     return _sha1([kind, mode, str(cluster_id), member_sig, ctx_hash, flags])
 

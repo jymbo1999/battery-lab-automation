@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+from collections import OrderedDict
 from html import escape
 from contextlib import contextmanager
 from dataclasses import asdict
@@ -25,6 +26,37 @@ from wonatech_parsers.wrd import build_capacity_summary, parse_wrd_file
 CAPACITY_SUMMARY_SUFFIXES = {".csv", ".xlsx", ".xls"}
 CAPACITY_LIVE_SUFFIXES = {".wrd", ".csv", ".xlsx", ".xls"}
 _STREAMLIT_UI_LOCK = threading.RLock()
+
+# In-process memo for the match report. Rebuilding it (build_*_match_report) is the
+# dominant per-request cost on Render (~2.2s CPU); it ran on every cluster click in
+# front of the render cache, defeating it. The report is a pure function of
+# (source files, condition workbook, overrides), so memoizing it by that identity
+# turns repeated clicks on unchanged data into a dict lookup. Keyed by
+# render_cache.match_report_key, so it self-invalidates exactly like the disk cache.
+_MATCH_REPORT_CACHE: "OrderedDict[str, Any]" = OrderedDict()
+_MATCH_REPORT_CACHE_LOCK = threading.Lock()
+_MATCH_REPORT_CACHE_MAX = 8
+
+
+def clear_match_report_cache() -> None:
+    with _MATCH_REPORT_CACHE_LOCK:
+        _MATCH_REPORT_CACHE.clear()
+
+
+def _memoized_match_report(cache_key: str, builder: Any) -> tuple[Any, bool]:
+    if render_cache._disabled():
+        return builder(), False
+    with _MATCH_REPORT_CACHE_LOCK:
+        if cache_key in _MATCH_REPORT_CACHE:
+            _MATCH_REPORT_CACHE.move_to_end(cache_key)
+            return _MATCH_REPORT_CACHE[cache_key], True
+    report = builder()  # built outside the lock; cold build is already serialized by _STREAMLIT_UI_LOCK
+    with _MATCH_REPORT_CACHE_LOCK:
+        _MATCH_REPORT_CACHE[cache_key] = report
+        _MATCH_REPORT_CACHE.move_to_end(cache_key)
+        while len(_MATCH_REPORT_CACHE) > _MATCH_REPORT_CACHE_MAX:
+            _MATCH_REPORT_CACHE.popitem(last=False)
+    return report, False
 
 
 @contextmanager
@@ -790,10 +822,16 @@ def build_eis_viewer_report(eis_root: Path, condition_workbook: Path, override_p
     if timings is not None:
         timings["conditions_ms"] = perf.ms(t)
     t = perf.now()
-    overrides = load_overrides(override_path)
-    report = build_eis_match_report(source_paths, conditions, eis_root, overrides)
+    cache_key = render_cache.match_report_key("eis", source_paths, eis_root, condition_workbook, override_path)
+
+    def _build():
+        overrides = load_overrides(override_path)
+        return build_eis_match_report(source_paths, conditions, eis_root, overrides)
+
+    report, hit = _memoized_match_report(cache_key, _build)
     if timings is not None:
         timings["match_ms"] = perf.ms(t)
+        timings["match_hit"] = hit
     return source_paths, conditions, report
 
 
@@ -814,10 +852,16 @@ def build_capacity_viewer_report(
     if timings is not None:
         timings["conditions_ms"] = perf.ms(t)
     t = perf.now()
-    overrides = load_overrides(override_path)
-    report = build_capacity_match_report(summary_paths, conditions, capacity_root, overrides)
+    cache_key = render_cache.match_report_key("capacity", summary_paths, capacity_root, condition_workbook, override_path)
+
+    def _build():
+        overrides = load_overrides(override_path)
+        return build_capacity_match_report(summary_paths, conditions, capacity_root, overrides)
+
+    report, hit = _memoized_match_report(cache_key, _build)
     if timings is not None:
         timings["match_ms"] = perf.ms(t)
+        timings["match_hit"] = hit
     return source_paths, summary_paths, conditions, report
 
 
