@@ -841,18 +841,33 @@ def relative_to_root(path: Path, root: Path) -> str:
         return ""
 
 
+# Human protocol tokens so capacity_matching.capacity_protocol_from_filename
+# (looks for "rate per" / "0.5c" / "0.1c") and the data browser recognize
+# imported capacity files exactly like legacy folders.
+CAPACITY_PROTOCOL_TOKENS = {"capacity_1": "0.1C", "capacity_2": "0.5C", "capacity_3": "rate per"}
+
+
+def assignment_protocol_token(assignment: str) -> str:
+    return CAPACITY_PROTOCOL_TOKENS.get(assignment, assignment)
+
+
 def final_directory_for_item(item: DraftImportFile, metadata: dict[str, object], journal_row: int, eis_root: Path, capacity_root: Path) -> Path:
     yymmdd = compact_metadata_date(metadata.get("date"))
     sample = safe_stem(str(metadata.get("sample") or item.cell_id or "sample"))
     if item.assignment.startswith("capacity_"):
-        return capacity_root / yymmdd / f"{journal_row}_{sample}_{item.assignment}_cyc" / long_metadata_date(metadata.get("date"))
+        protocol = assignment_protocol_token(item.assignment)
+        folder = safe_stem(f"{journal_row}_{sample}_{protocol}_cyc")
+        return capacity_root / yymmdd / folder / long_metadata_date(metadata.get("date"))
     return eis_root / yymmdd / sample
 
 
 def final_filename_for_item(item: DraftImportFile, metadata: dict[str, object], journal_row: int, suffix: str) -> str:
     sample = safe_stem(str(metadata.get("sample") or item.cell_id or "sample"))
-    time_point = safe_stem(item.time_point) if item.time_point else item.assignment
-    return safe_filename(f"{journal_row}_{sample}_{time_point}{suffix.lower()}")
+    if item.assignment.startswith("capacity_"):
+        token = assignment_protocol_token(item.assignment)
+    else:
+        token = safe_stem(item.time_point) if item.time_point else item.assignment
+    return safe_filename(f"{journal_row}_{sample}_{token}{suffix.lower()}")
 
 
 def collision_safe_path(path: Path) -> Path:

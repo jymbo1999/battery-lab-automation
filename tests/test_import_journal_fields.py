@@ -140,5 +140,16 @@ class JournalWriterTests(unittest.TestCase):
             wb.close()
 
 
+from battery_lab.experiment_import import assignment_protocol_token
+
+
+class ProtocolNamingTests(unittest.TestCase):
+    def test_assignment_maps_to_human_protocol_token(self):
+        self.assertEqual(assignment_protocol_token("capacity_1"), "0.1C")
+        self.assertEqual(assignment_protocol_token("capacity_2"), "0.5C")
+        self.assertEqual(assignment_protocol_token("capacity_3"), "rate per")
+        self.assertEqual(assignment_protocol_token("eis_comparison"), "eis_comparison")
+
+
 if __name__ == "__main__":
     unittest.main()
