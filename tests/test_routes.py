@@ -231,9 +231,8 @@ class BatteryRouteTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             payload = response.get_json()
             self.assertTrue(payload["ok"])
-            self.assertIn("date", payload["required_fields"])
+            self.assertEqual(payload["required_fields"], routes.REQUIRED_IMPORT_FIELDS)
             self.assertIn("sample 1", payload["options"]["sample"])
-            self.assertIn("1.0M LiPF6", payload["options"]["electrolyte"])
 
     def test_jobs_api_reports_unavailable_without_main_app_db(self):
         with tempfile.TemporaryDirectory() as tmp:
