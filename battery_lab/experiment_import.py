@@ -540,24 +540,56 @@ def commit_import_draft(
     manifest = load_import_draft(output_root, draft_id)
     if manifest.commit_status == "committed":
         return manifest
-    if manifest.metadata_status != "ready":
-        raise ValueError("Draft metadata must be ready before commit.")
-    active_files = [item for item in manifest.files if item.assignment != "exclude"]
-    if not active_files:
+    units = list_row_units(list(manifest.files))
+    if not units:
         raise ValueError("No files selected for commit.")
+    unit_meta = manifest.unit_metadata or {}
+    # Validate every unit up front so a later failure never leaves partial rows.
+    for unit in units:
+        entry = unit_meta.get(unit["unit_id"]) or {}
+        if entry.get("metadata_status") != "ready":
+            raise ValueError(
+                f"Draft metadata must be ready for all units before commit (unit {unit['unit_id']})."
+            )
 
-    journal_row = append_journal_row(condition_workbook, condition_sheet, manifest.metadata or {})
-    saved_files = save_draft_files_to_final_locations(
-        manifest,
-        journal_row=journal_row,
-        eis_root=eis_root,
-        capacity_root=capacity_root,
-        output_root=output_root,
-    )
+    # One workbook open -> append one row per unit -> one save.
+    condition_workbook.parent.mkdir(parents=True, exist_ok=True)
+    workbook = load_workbook(condition_workbook)
+    if condition_sheet not in workbook.sheetnames:
+        workbook.close()
+        raise KeyError(f"Sheet not found: {condition_sheet}")
+    worksheet = workbook[condition_sheet]
+    unit_rows: dict[str, int] = {}
+    for unit in units:
+        row = worksheet.max_row + 1
+        meta = (unit_meta.get(unit["unit_id"]) or {}).get("metadata") or {}
+        write_journal_row(worksheet, row, meta)
+        unit_rows[unit["unit_id"]] = row
+    workbook.save(condition_workbook)
+    workbook.close()
+
+    # Per-unit: save its files to its row; record each file's unit metadata.
+    by_file = {item.file_id: item for item in manifest.files}
+    metadata_by_file: dict[str, dict[str, object]] = {}
+    saved_files: list[dict[str, object]] = []
+    for unit in units:
+        row = unit_rows[unit["unit_id"]]
+        meta = (unit_meta.get(unit["unit_id"]) or {}).get("metadata") or {}
+        for file_id in unit["file_ids"]:
+            item = by_file[file_id]
+            metadata_by_file[file_id] = meta
+            saved = save_one_file_to_final_location(item, meta, row, eis_root, capacity_root)
+            if saved:
+                saved_files.append(saved)
+
+    processed_manifest_dir = output_root / "processed" / "imports" / manifest.draft_id
+    processed_manifest_dir.mkdir(parents=True, exist_ok=True)
+    write_manifest(manifest, processed_manifest_dir / "draft_manifest_before_commit.json")
+
     match_overrides = write_commit_match_overrides(
         manifest,
-        journal_row=journal_row,
         saved_files=saved_files,
+        metadata_by_file=metadata_by_file,
         eis_root=eis_root,
         capacity_root=capacity_root,
         condition_workbook=condition_workbook,
@@ -576,11 +608,13 @@ def commit_import_draft(
         eis_match_override_path=eis_match_override_path,
         capacity_match_override_path=capacity_match_override_path,
     )
+    rows_list = list(unit_rows.values())
     committed = replace(
         manifest,
         commit_status="committed",
         committed_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        journal_row=journal_row,
+        journal_row=rows_list[0] if rows_list else None,
+        journal_rows=rows_list,
         saved_files=saved_files,
         match_overrides=match_overrides,
         persist_outputs=persist_outputs,
@@ -753,49 +787,41 @@ def append_journal_row(condition_workbook: Path, condition_sheet: str, metadata:
     return row
 
 
-def save_draft_files_to_final_locations(
-    manifest: DraftImportManifest,
-    *,
+def save_one_file_to_final_location(
+    item: DraftImportFile,
+    metadata: dict[str, object],
     journal_row: int,
     eis_root: Path,
     capacity_root: Path,
-    output_root: Path,
-) -> list[dict[str, object]]:
-    saved = []
-    metadata = manifest.metadata or {}
-    for item in manifest.files:
-        if item.assignment == "exclude":
-            continue
-        destination_dir = final_directory_for_item(item, metadata, journal_row, eis_root, capacity_root)
-        destination_dir.mkdir(parents=True, exist_ok=True)
-        raw_source = Path(item.raw_path)
-        raw_target = collision_safe_path(destination_dir / final_filename_for_item(item, metadata, journal_row, raw_source.suffix))
-        shutil.copy2(raw_source, raw_target)
-        row = {
-            "file_id": item.file_id,
-            "assignment": item.assignment,
-            "source_path": str(raw_source),
-            "saved_path": str(raw_target),
-            "processed_saved_path": "",
-        }
-        if item.processed_path:
-            processed_source = Path(item.processed_path)
-            processed_target = collision_safe_path(destination_dir / f"{raw_target.stem}_{processed_source.name}")
-            shutil.copy2(processed_source, processed_target)
-            row["processed_saved_path"] = str(processed_target)
-        saved.append(row)
-
-    processed_manifest_dir = output_root / "processed" / "imports" / manifest.draft_id
-    processed_manifest_dir.mkdir(parents=True, exist_ok=True)
-    write_manifest(manifest, processed_manifest_dir / "draft_manifest_before_commit.json")
-    return saved
+) -> dict[str, object] | None:
+    if item.assignment == "exclude":
+        return None
+    destination_dir = final_directory_for_item(item, metadata, journal_row, eis_root, capacity_root)
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    raw_source = Path(item.raw_path)
+    raw_target = collision_safe_path(destination_dir / final_filename_for_item(item, metadata, journal_row, raw_source.suffix))
+    shutil.copy2(raw_source, raw_target)
+    row = {
+        "file_id": item.file_id,
+        "assignment": item.assignment,
+        "journal_row": journal_row,
+        "source_path": str(raw_source),
+        "saved_path": str(raw_target),
+        "processed_saved_path": "",
+    }
+    if item.processed_path:
+        processed_source = Path(item.processed_path)
+        processed_target = collision_safe_path(destination_dir / f"{raw_target.stem}_{processed_source.name}")
+        shutil.copy2(processed_source, processed_target)
+        row["processed_saved_path"] = str(processed_target)
+    return row
 
 
 def write_commit_match_overrides(
     manifest: DraftImportManifest,
     *,
-    journal_row: int,
     saved_files: list[dict[str, object]],
+    metadata_by_file: dict[str, dict[str, object]],
     eis_root: Path,
     capacity_root: Path,
     condition_workbook: Path,
@@ -806,16 +832,24 @@ def write_commit_match_overrides(
     if not eis_match_override_path and not capacity_match_override_path:
         return []
 
-    condition_key, condition = condition_for_journal_row(condition_workbook, condition_sheet, journal_row, manifest.metadata or {})
+    conditions = read_conditions(condition_workbook, sheet_name=condition_sheet) if condition_workbook.exists() else {}
+    by_row = {cond.get("_source_row_number"): (key, cond) for key, cond in conditions.items()}
     by_file = {item.file_id: item for item in manifest.files}
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     grouped: dict[str, tuple[Path, dict[str, dict[str, object]]]] = {}
     written: list[dict[str, object]] = []
 
     for saved in saved_files:
-        item = by_file.get(str(saved.get("file_id") or ""))
+        file_id = str(saved.get("file_id") or "")
+        item = by_file.get(file_id)
         if item is None:
             continue
+        journal_row = saved.get("journal_row")
+        meta = metadata_by_file.get(file_id, {})
+        condition_key, condition = by_row.get(journal_row) or (
+            str(meta.get("sample") or f"row{journal_row}").strip() or f"row{journal_row}",
+            dict(meta),
+        )
         kind = "capacity" if str(saved.get("assignment") or item.assignment).startswith("capacity_") else "eis"
         override_path = capacity_match_override_path if kind == "capacity" else eis_match_override_path
         source_root = capacity_root if kind == "capacity" else eis_root
@@ -832,8 +866,8 @@ def write_commit_match_overrides(
         grouped[kind][1][relative] = {
             "condition_key": condition_key,
             "journal_row": journal_row,
-            "sample": condition.get("sample") or (manifest.metadata or {}).get("sample") or condition_key,
-            "date": condition.get("date") or (manifest.metadata or {}).get("date") or "",
+            "sample": condition.get("sample") or meta.get("sample") or condition_key,
+            "date": condition.get("date") or meta.get("date") or "",
             "selected_at": now,
             "selection_source": "import_commit",
             "import_draft_id": manifest.draft_id,
@@ -853,20 +887,6 @@ def write_commit_match_overrides(
     for override_path, overrides in grouped.values():
         save_match_overrides(override_path, overrides)
     return written
-
-
-def condition_for_journal_row(
-    condition_workbook: Path,
-    condition_sheet: str,
-    journal_row: int,
-    metadata: dict[str, object],
-) -> tuple[str, dict[str, object]]:
-    conditions = read_conditions(condition_workbook, sheet_name=condition_sheet) if condition_workbook.exists() else {}
-    for key, condition in conditions.items():
-        if condition.get("_source_row_number") == journal_row:
-            return key, condition
-    fallback_key = str(metadata.get("sample") or f"row{journal_row}").strip() or f"row{journal_row}"
-    return fallback_key, dict(metadata)
 
 
 def override_source_path_for_saved_file(kind: str, saved: dict[str, object]) -> str:
