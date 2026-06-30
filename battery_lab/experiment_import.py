@@ -44,16 +44,8 @@ ALL_ASSIGNMENT_OPTIONS = list(ASSIGNMENT_LABELS)
 # omitted here: removing a file is done with the row's × delete button, not a toggle
 # value. "exclude" remains a valid internal assignment (commit still skips it).
 TYPE_OPTIONS = ["eis_comparison", "eis_time_series", "capacity_1", "capacity_2", "capacity_3"]
-REQUIRED_METADATA_FIELDS = [
-    "date",
-    "sample",
-    "cell_type",
-    "electrolyte",
-    "binder",
-    "voltage_range",
-    "ratio",
-    "areal_mass_density",
-]
+REQUIRED_IMPORT_FIELDS = ["date", "sample", "foil_electrode_g", "foil_electrode_mm"]
+NUMERIC_IMPORT_FIELDS = ["foil_electrode_g", "foil_electrode_mm", "foil_g", "ratio", "current_density", "foil_thickness_mm", "electrolyte_ul"]
 # Single source of truth for the import form + journal writer.
 # Each field: stable key, EXACT Excel header (sheet JYJ), bucket, default.
 # Mapping by EXACT header avoids the condition_column 'mm' collision
@@ -893,8 +885,8 @@ def manifest_payload(manifest: DraftImportManifest) -> dict[str, object]:
 
 
 def clean_metadata(metadata: dict[str, object]) -> dict[str, object]:
+    allowed = set(field_keys())
     cleaned: dict[str, object] = {}
-    allowed = set(REQUIRED_METADATA_FIELDS) | {"sample_group", "material_family", "treatment", "note", "additional_note"}
     for key in allowed:
         value = metadata.get(key)
         if value is None:
@@ -907,20 +899,20 @@ def clean_metadata(metadata: dict[str, object]) -> dict[str, object]:
 
 
 def validate_metadata(metadata: dict[str, object]) -> list[str]:
-    errors = [f"{field} is required" for field in REQUIRED_METADATA_FIELDS if metadata.get(field) in (None, "")]
-    # areal_mass_density (mg/cm^2) is the source for specific-capacity
-    # normalization: mass_g = areal_mass_density * (pi * 0.6**2) / 1000, then
-    # mAh/g = mAh / mass_g. See wonatech_parsers.wrd.build_capacity_summary and
-    # build_draft_file for the full WRD -> mAh/g conversion mapping.
-    numeric_fields = ("areal_mass_density", "ratio")
-    for field in numeric_fields:
+    errors = [f"{field} is required" for field in REQUIRED_IMPORT_FIELDS if metadata.get(field) in (None, "")]
+    for field in NUMERIC_IMPORT_FIELDS:
         value = metadata.get(field)
         if value in (None, ""):
             continue
-        try:
-            float(str(value).replace(",", ""))
-        except ValueError:
+        if _to_float(value) is None:
             errors.append(f"{field} must be numeric")
+    fe = _to_float(metadata.get("foil_electrode_g"))
+    foil = _to_float(metadata.get("foil_g"))
+    if fe is not None and foil is not None and fe <= foil:
+        errors.append("foil+electrode (g) must be greater than foil (g)")
+    ratio = _to_float(metadata.get("ratio"))
+    if ratio is not None and not (0 < ratio <= 1):
+        errors.append("ratio must be between 0 and 1")
     date = str(metadata.get("date") or "")
     if date and not re.fullmatch(r"(?:\d{6}|\d{8}|\d{4}[-./]\d{1,2}[-./]\d{1,2})", date):
         errors.append("date must be YYMMDD, YYYYMMDD, or YYYY-MM-DD")
@@ -928,7 +920,7 @@ def validate_metadata(metadata: dict[str, object]) -> list[str]:
 
 
 def metadata_options_from_conditions(conditions: dict[str, dict[str, object]], *, limit: int = 40) -> dict[str, list[str]]:
-    fields = REQUIRED_METADATA_FIELDS + ["sample_group", "material_family", "treatment"]
+    fields = REQUIRED_IMPORT_FIELDS + ["sample_group", "material_family", "treatment"]
     options: dict[str, list[str]] = {}
     for field in fields:
         values = sorted({str(row.get(field)).strip() for row in conditions.values() if row.get(field) not in (None, "")})

@@ -25,7 +25,7 @@ from .ai_service import ai_status_payload, get_ai_run, run_ai_smoke
 from .capacity_csv_audit import audit_capacity_csv_wrd_pairs
 from .excel_dashboard import DEFAULT_CONDITION_SHEET, WorkbookStore, parse_positive_int, render_page as render_excel_dashboard_page
 from .experiment_import import (
-    REQUIRED_METADATA_FIELDS,
+    REQUIRED_IMPORT_FIELDS,
     append_import_draft_files,
     build_import_draft_cluster_preview,
     commit_import_draft,
@@ -249,15 +249,15 @@ def import_draft_overlay_api(draft_id: str):
 @blueprint.get("/api/import/metadata-options")
 def import_metadata_options_api():
     if not BATTERY_CONDITION_WORKBOOK.exists():
-        return jsonify({"ok": True, "required_fields": REQUIRED_METADATA_FIELDS, "options": {}})
+        return jsonify({"ok": True, "required_fields": REQUIRED_IMPORT_FIELDS, "options": {}})
     try:
         conditions = read_conditions(BATTERY_CONDITION_WORKBOOK, sheet_name=DEFAULT_CONDITION_SHEET)
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc), "required_fields": REQUIRED_METADATA_FIELDS, "options": {}}), 500
+        return jsonify({"ok": False, "error": str(exc), "required_fields": REQUIRED_IMPORT_FIELDS, "options": {}}), 500
     return jsonify(
         {
             "ok": True,
-            "required_fields": REQUIRED_METADATA_FIELDS,
+            "required_fields": REQUIRED_IMPORT_FIELDS,
             "options": metadata_options_from_conditions(conditions),
         }
     )

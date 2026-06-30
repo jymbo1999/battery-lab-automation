@@ -65,5 +65,38 @@ class ComputeDerivedTests(unittest.TestCase):
         self.assertIsNone(compute_derived_metadata({"foil_g": "0.009928"})["areal_mass_density"])
 
 
+from battery_lab.experiment_import import validate_metadata, clean_metadata
+
+
+class ValidateMetadataTests(unittest.TestCase):
+    def _valid(self):
+        return {
+            "date": "260627", "sample": "cell A",
+            "foil_electrode_g": "0.0150", "foil_electrode_mm": "0.020",
+            "foil_g": "0.009928", "ratio": "0.96",
+        }
+
+    def test_valid_metadata_has_no_errors(self):
+        self.assertEqual(validate_metadata(self._valid()), [])
+
+    def test_required_variable_fields_enforced(self):
+        m = self._valid(); del m["foil_electrode_g"]
+        self.assertIn("foil_electrode_g is required", validate_metadata(m))
+
+    def test_foil_electrode_must_exceed_foil(self):
+        m = self._valid(); m["foil_electrode_g"] = "0.005"
+        self.assertTrue(any("foil+electrode" in e for e in validate_metadata(m)))
+
+    def test_ratio_range(self):
+        m = self._valid(); m["ratio"] = "1.5"
+        self.assertTrue(any("ratio" in e for e in validate_metadata(m)))
+
+    def test_clean_metadata_keeps_only_spec_keys(self):
+        cleaned = clean_metadata({**self._valid(), "sample_group": "x", "junk": "y"})
+        self.assertNotIn("sample_group", cleaned)
+        self.assertNotIn("junk", cleaned)
+        self.assertIn("sample", cleaned)
+
+
 if __name__ == "__main__":
     unittest.main()
