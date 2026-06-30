@@ -179,6 +179,8 @@ class DraftImportManifest:
     saved_files: list[dict[str, object]] | None = None
     match_overrides: list[dict[str, object]] | None = None
     persist_outputs: list[dict[str, object]] | None = None
+    unit_metadata: dict[str, object] | None = None
+    journal_rows: list[int] | None = None
 
 
 def create_import_draft(
@@ -464,19 +466,60 @@ def update_import_draft_assignments(
     return updated
 
 
+def unit_id_for_file(item: DraftImportFile) -> str:
+    if item.assignment == "eis_time_series":
+        return f"ts__{item.cell_id or item.file_id}"
+    return item.file_id
+
+
+def list_row_units(files: list[DraftImportFile]) -> list[dict[str, object]]:
+    """Group files into journal-row units: strict per-file, time-series by cell_id."""
+    order: list[str] = []
+    groups: dict[str, list[DraftImportFile]] = {}
+    for item in files:
+        if item.assignment == "exclude":
+            continue
+        uid = unit_id_for_file(item)
+        if uid not in groups:
+            groups[uid] = []
+            order.append(uid)
+        groups[uid].append(item)
+    units = []
+    for uid in order:
+        members = groups[uid]
+        rep = members[0]
+        units.append(
+            {
+                "unit_id": uid,
+                "file_ids": [m.file_id for m in members],
+                "assignment": rep.assignment,
+                "is_time_series": rep.assignment == "eis_time_series",
+                "representative_filename": rep.original_filename,
+                "filenames": [m.original_filename for m in members],
+                "cell_id": rep.cell_id,
+            }
+        )
+    return units
+
+
 def update_import_draft_metadata(
     output_root: Path,
     draft_id: str,
+    unit_id: str,
     metadata: dict[str, object],
 ) -> DraftImportManifest:
     manifest = load_import_draft(output_root, draft_id)
     cleaned = clean_metadata(metadata)
     errors = validate_metadata(cleaned)
+    unit_meta = dict(manifest.unit_metadata or {})
+    unit_meta[unit_id] = {
+        "metadata": cleaned,
+        "metadata_status": "ready" if not errors else "invalid",
+        "metadata_errors": errors,
+    }
     updated = replace(
         manifest,
-        metadata=cleaned,
-        metadata_status="ready" if not errors else "invalid",
-        metadata_errors=errors,
+        unit_metadata=unit_meta,
         updated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
     )
     write_manifest(updated, output_root / "import_drafts" / draft_id / "manifest.json")
@@ -924,6 +967,8 @@ def manifest_from_payload(payload: dict[str, object]) -> DraftImportManifest:
     data.setdefault("saved_files", [])
     data.setdefault("match_overrides", [])
     data.setdefault("persist_outputs", [])
+    data.setdefault("unit_metadata", {})
+    data.setdefault("journal_rows", [])
     return DraftImportManifest(**data)
 
 

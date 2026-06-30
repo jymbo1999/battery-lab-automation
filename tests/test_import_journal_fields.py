@@ -151,5 +151,42 @@ class ProtocolNamingTests(unittest.TestCase):
         self.assertEqual(assignment_protocol_token("eis_comparison"), "eis_comparison")
 
 
+from dataclasses import replace
+from battery_lab.experiment_import import DraftImportFile, unit_id_for_file, list_row_units
+
+
+def _unit_file(file_id, assignment, cell_id):
+    return DraftImportFile(
+        file_id=file_id, original_filename=file_id + ".dat", raw_path="", suffix=".seo",
+        sha256="x", size_bytes=1, parser_kind="table", analysis_type="eis", cell_id=cell_id,
+        normalized_rows=1, assignment=assignment, suggested_assignment=assignment,
+        assignment_options=[], time_point="",
+    )
+
+
+class RowUnitTests(unittest.TestCase):
+    def test_non_timeseries_each_file_is_its_own_unit(self):
+        f1 = _unit_file("f1", "eis_comparison", "A")
+        f2 = _unit_file("f2", "capacity_1", "B")
+        self.assertEqual(unit_id_for_file(f1), "f1")
+        self.assertEqual(unit_id_for_file(f2), "f2")
+
+    def test_timeseries_files_group_by_cell_id(self):
+        f1 = replace(_unit_file("f1", "eis_time_series", "cellA"), time_point="0hr")
+        f2 = replace(_unit_file("f2", "eis_time_series", "cellA"), time_point="3hr")
+        f3 = replace(_unit_file("f3", "eis_time_series", "cellB"), time_point="0hr")
+        units = list_row_units([f1, f2, f3])
+        ids = {u["unit_id"]: u["file_ids"] for u in units}
+        self.assertEqual(ids["ts__cellA"], ["f1", "f2"])
+        self.assertEqual(ids["ts__cellB"], ["f3"])
+        self.assertEqual(len(units), 2)
+
+    def test_excluded_files_skipped(self):
+        f1 = _unit_file("f1", "exclude", "A")
+        f2 = _unit_file("f2", "capacity_1", "B")
+        units = list_row_units([f1, f2])
+        self.assertEqual([u["unit_id"] for u in units], ["f2"])
+
+
 if __name__ == "__main__":
     unittest.main()
