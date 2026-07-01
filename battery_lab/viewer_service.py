@@ -103,6 +103,16 @@ def eis_viewer_options(eis_root: Path, capacity_root: Path, condition_workbook: 
             }
             for cluster in comparison_clusters
         ]
+        # Matched files that join no multi-file cluster still deserve their own
+        # 1-file cluster so they are viewable/grouped rather than lost.
+        clustered_members: set[str] = set()
+        for cluster in comparison_clusters:
+            clustered_members.update(p for p in cluster.source_paths.split(";") if p)
+        for group in time_series_groups:  # only groups actually shown (file_count >= 2)
+            clustered_members.update(p for p in group.member_paths.split(";") if p)
+        comparison_options.extend(
+            eis_independent_cluster_options(report, conditions, clustered_members)
+        )
         if source_options:
             comparison_options.append(
                 {
@@ -184,6 +194,12 @@ def eis_overlay_payload(
                 rel_paths = all_rel_paths
                 title = "all dates · all EIS data · Nyquist"
                 performance_mode = True
+            elif key.startswith("IND::"):
+                # Single-file "independent" cluster for a matched file that joins
+                # no multi-file comparison cluster (see eis_independent_cluster_options).
+                rel = key[len("IND::"):]
+                rel_paths = [rel] if rel in all_rel_paths else []
+                title = f"{Path(rel).stem} · 단일 EIS"
             else:
                 cluster = next((item for item in clusters if item.cluster_id == key), clusters[0] if clusters else None)
                 rel_paths = [item for item in cluster.source_paths.split(";") if item] if cluster else all_rel_paths
@@ -440,6 +456,63 @@ def journal_row_types_payload(
         orphan_set = set()
 
     return {"available": True, "row_types": row_types, "orphan_rows": sorted(orphan_set)}
+
+
+def journal_orphan_files_payload(
+    eis_root: Path,
+    capacity_root: Path,
+    condition_workbook: Path,
+    eis_override_path: Path,
+    capacity_override_path: Path,
+) -> dict[str, Any]:
+    """Data files that are not matched to any journal row ("고아 파일").
+
+    Lists name, relative path and file creation time so they can be reviewed in a
+    table under the journal. Best-effort per kind; a missing root is skipped.
+    """
+    from .matching_service import build_match_payload
+    import datetime as _dt
+
+    files: list[dict[str, Any]] = []
+    for kind, root, override_path in (
+        ("eis", eis_root, eis_override_path),
+        ("capacity", capacity_root, capacity_override_path),
+    ):
+        try:
+            payload = build_match_payload(kind, root, condition_workbook, override_path)
+        except Exception:
+            continue
+        for row in payload.get("final_rows", []):
+            if str(row.get("journal_row") or "").strip():
+                continue  # has a journal row -> not orphan
+            rel = str(row.get("relative_path") or "")
+            if not rel:
+                continue
+            abs_path = root / rel
+            created = ""
+            try:
+                stat = abs_path.stat()
+                ts = getattr(stat, "st_birthtime", None) or stat.st_mtime
+                created = _dt.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+            except OSError:
+                created = ""
+            files.append(
+                {
+                    "name": Path(rel).name,
+                    "rel_path": rel,
+                    "kind": kind,
+                    "status": row.get("status") or "",
+                    "created": created,
+                }
+            )
+    files.sort(key=lambda item: (item["kind"], item["rel_path"]))
+    return {
+        "available": True,
+        "count": len(files),
+        "eis_count": sum(1 for f in files if f["kind"] == "eis"),
+        "capacity_count": sum(1 for f in files if f["kind"] == "capacity"),
+        "files": files,
+    }
 
 
 def journal_row_detail_payload(
@@ -1031,6 +1104,37 @@ def load_overrides(path: Path) -> dict[str, dict[str, Any]]:
     except Exception:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def eis_independent_cluster_options(
+    report: Any,
+    conditions: dict[str, dict[str, Any]],
+    clustered_members: set[str],
+) -> list[dict[str, Any]]:
+    """1-file comparison options for confirmed-matched EIS files in no cluster.
+
+    Such files (matched to a journal row but sharing no comparison partner) would
+    otherwise only show in the individual 'source' mode. Emitting them as their own
+    ``IND::<rel>`` cluster keeps them visible in the comparison dropdown. The
+    overlay resolves the ``IND::`` prefix to a single file.
+    """
+    options: list[dict[str, Any]] = []
+    for match in getattr(report, "matches", []):
+        rel = getattr(match, "relative_path", "")
+        if not rel or rel in clustered_members:
+            continue
+        if getattr(match, "status", "") not in {"verified", "manual"}:
+            continue
+        clustered_members.add(rel)
+        condition = conditions.get(getattr(match, "condition_key", ""), {})
+        date = eis_cluster_date(rel)
+        cell = str(clean(condition.get("cell_type")) or "?")
+        voltage = str(clean(condition.get("voltage_range")) or "?")
+        ratio = str(clean(condition.get("ratio")) or "?")
+        label = f"{date:<9} · EIS 단일       · {cell:<3} · {voltage:<9} · r{ratio:<5} ·   1 file · {Path(rel).name}"
+        options.append({"value": f"IND::{rel}", "label": label, "file_count": 1, "source_paths": rel})
+    options.sort(key=lambda option: option["label"])
+    return options
 
 
 def path_options(paths: list[Path], root: Path) -> list[dict[str, Any]]:

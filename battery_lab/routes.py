@@ -62,6 +62,7 @@ from .viewer_service import (
     eis_overlay_payload,
     eis_viewer_options,
     finder_html,
+    journal_orphan_files_payload,
     journal_row_detail_payload,
     journal_row_types_payload,
 )
@@ -550,6 +551,23 @@ def journal_row_types_api():
         )
     except Exception as exc:
         return jsonify({"available": False, "row_types": {}, "error": str(exc)})
+
+
+@blueprint.route("/api/journal/orphan-files", methods=["GET"])
+def journal_orphan_files_api():
+    """Data files not matched to any journal row ('고아 파일') for the table below the journal."""
+    try:
+        return jsonify(
+            journal_orphan_files_payload(
+                BATTERY_EIS_ROOT,
+                BATTERY_CAPACITY_ROOT,
+                BATTERY_CONDITION_WORKBOOK,
+                BATTERY_MATCH_EIS_JSON,
+                BATTERY_MATCH_CAPACITY_JSON,
+            )
+        )
+    except Exception as exc:
+        return jsonify({"available": False, "count": 0, "files": [], "error": str(exc)})
 
 
 def _journal_row_info_fields(row_number: int) -> list[dict[str, Any]]:

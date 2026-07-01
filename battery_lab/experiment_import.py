@@ -776,6 +776,21 @@ def write_journal_row(worksheet, row: int, metadata: dict[str, object]) -> None:
             worksheet.cell(row=row, column=col).value = derived[key]
 
 
+def last_populated_row(worksheet) -> int:
+    """Largest row index that actually holds a value.
+
+    openpyxl's ``max_row`` counts rows that only carry leftover styling/blank
+    dimensions (the JYJ sheet reports max_row 631 while the last real experiment
+    is on 512). Appending at ``max_row + 1`` would drop new experiments ~120 rows
+    below the data. Scan upward for the first row with any non-empty cell instead.
+    """
+    for row_idx in range(worksheet.max_row, 0, -1):
+        for column_idx in range(1, worksheet.max_column + 1):
+            if worksheet.cell(row=row_idx, column=column_idx).value not in (None, ""):
+                return row_idx
+    return 1
+
+
 def append_journal_row(condition_workbook: Path, condition_sheet: str, metadata: dict[str, object]) -> int:
     condition_workbook.parent.mkdir(parents=True, exist_ok=True)
     workbook = load_workbook(condition_workbook)
@@ -783,7 +798,7 @@ def append_journal_row(condition_workbook: Path, condition_sheet: str, metadata:
         workbook.close()
         raise KeyError(f"Sheet not found: {condition_sheet}")
     worksheet = workbook[condition_sheet]
-    row = worksheet.max_row + 1
+    row = last_populated_row(worksheet) + 1
     write_journal_row(worksheet, row, metadata)
     workbook.save(condition_workbook)
     workbook.close()

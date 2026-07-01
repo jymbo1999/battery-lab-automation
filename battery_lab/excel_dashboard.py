@@ -192,6 +192,14 @@ def parse_positive_int(value: Any, default: int | None = None) -> int | None:
     return parsed if parsed > 0 else default
 
 
+def _row_has_value(worksheet: Any, row_idx: int) -> bool:
+    """True if any cell in the row holds a real value (ignores blank styled cells)."""
+    for column_idx in range(1, worksheet.max_column + 1):
+        if worksheet.cell(row=row_idx, column=column_idx).value not in (None, ""):
+            return True
+    return False
+
+
 def build_sheet_payload(
     worksheet: Any,
     workbook_path: Path,
@@ -225,7 +233,16 @@ def build_sheet_payload(
         source_rows.append((row_idx, ignored))
 
     last_body_row = max((row_idx for row_idx, _ in source_rows if row_idx > 1), default=source_max_row)
-    extra_start_row = (source_max_row + 1) if include_ignored else (last_body_row + 1)
+    # Blank editable rows must begin AFTER the last row that actually holds data,
+    # not after the last filter-visible row. Otherwise a hidden-but-populated row
+    # (e.g. an ignored ZIB experiment on 511/512) gets overdrawn by blank extra
+    # rows, and an interior empty row (510) shows as an editable gap. This matches
+    # append_journal_row, so the row where new experiments land is the first blank
+    # editable row shown here.
+    last_populated_row = source_max_row
+    while last_populated_row > 1 and not _row_has_value(worksheet, last_populated_row):
+        last_populated_row -= 1
+    extra_start_row = (source_max_row + 1) if include_ignored else (max(last_body_row, last_populated_row) + 1)
     rendered_max_row = extra_start_row + extra_rows - 1 if extra_rows else max(last_body_row, source_max_row)
     extra_template_row = last_body_row if last_body_row > 1 else 1
 

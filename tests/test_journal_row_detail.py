@@ -1,7 +1,9 @@
 import unittest
+from types import SimpleNamespace
 
 from battery_lab.excel_dashboard import render_page
 from battery_lab.flask_app import create_app
+from battery_lab.viewer_service import eis_independent_cluster_options
 
 
 class ExcelDashboardRowFeaturesTests(unittest.TestCase):
@@ -60,6 +62,41 @@ class JournalRowApiTests(unittest.TestCase):
         for key in ("types", "previews", "info_fields"):
             self.assertIn(key, payload)
             self.assertIsInstance(payload[key], list)
+
+    def test_orphan_files_endpoint_shape(self):
+        resp = self.client.get("/battery/api/journal/orphan-files")
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.get_json()
+        for key in ("count", "eis_count", "capacity_count", "files"):
+            self.assertIn(key, payload)
+        self.assertIsInstance(payload["files"], list)
+        for entry in payload["files"]:
+            for key in ("name", "rel_path", "kind", "status", "created"):
+                self.assertIn(key, entry)
+
+
+class IndependentClusterTests(unittest.TestCase):
+    """A confirmed-matched EIS file that joins no cluster becomes its own IND:: option."""
+
+    def test_lone_matched_file_becomes_independent_cluster(self):
+        report = SimpleNamespace(
+            matches=[
+                SimpleNamespace(relative_path="d/a.SEO", status="manual", condition_key="A"),
+                SimpleNamespace(relative_path="d/b.SEO", status="verified", condition_key="B"),
+                SimpleNamespace(relative_path="d/c.SEO", status="ambiguous", condition_key="C"),
+                SimpleNamespace(relative_path="d/in.SEO", status="manual", condition_key="D"),
+            ]
+        )
+        conditions = {"A": {}, "B": {}, "C": {}, "D": {}}
+        clustered = {"d/in.SEO"}  # already in a real cluster
+        options = eis_independent_cluster_options(report, conditions, clustered)
+        values = {o["value"] for o in options}
+        # a + b are matched and not clustered -> independent; c is ambiguous (skip); in is clustered (skip)
+        self.assertIn("IND::d/a.SEO", values)
+        self.assertIn("IND::d/b.SEO", values)
+        self.assertNotIn("IND::d/c.SEO", values)
+        self.assertNotIn("IND::d/in.SEO", values)
+        self.assertTrue(all(o["file_count"] == 1 for o in options))
 
 
 if __name__ == "__main__":

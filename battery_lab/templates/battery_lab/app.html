@@ -40,10 +40,13 @@
   .battery-miss { color: #b42318; font-weight: 700; }
   .battery-frame { width: 100%; min-height: 760px; border: 1px solid #d8dee8; border-radius: 8px; background: #fff; }
   .battery-journal-frame { width: 100%; height: 820px; border: 1px solid #d8dee8; border-radius: 8px; background: #fff; }
-  .battery-page-journal { height: 100vh; min-height: 100vh; overflow: hidden; }
-  .battery-page-journal .battery-main { height: 100vh; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: 16px; }
-  .battery-page-journal .battery-panel.journal-panel { min-height: 0; flex: 1; display: flex; flex-direction: column; margin-bottom: 0; }
-  .battery-page-journal .battery-journal-frame { min-height: 0; flex: 1; height: auto; }
+  /* Journal page scrolls normally; the journal viewer stays the dominant element
+     (fills most of the first screen) while the orphan-files panel below is reached
+     by scrolling down. */
+  .battery-page-journal { min-height: 100vh; }
+  .battery-page-journal .battery-main { display: flex; flex-direction: column; padding: 16px; }
+  .battery-page-journal .battery-panel.journal-panel { display: flex; flex-direction: column; margin-bottom: 16px; }
+  .battery-page-journal .battery-journal-frame { height: 82vh; min-height: 520px; }
   .battery-page-journal .battery-path-status { display: none; }
   .battery-graph-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-bottom: 12px; }
   .battery-select { width: 100%; min-height: 36px; border: 1px solid #a8b3c2; border-radius: 7px; background: #fff; color: #202733; padding: 6px 9px; }
@@ -631,6 +634,18 @@
         {% else %}
         <div class="battery-empty">실험 일지 파일이 없습니다. <code>{{ status.condition_workbook.path }}</code>를 확인하세요.</div>
         {% endif %}
+      </section>
+
+      <section class="battery-panel battery-orphan-files" data-orphan-url="{{ url_for('battery_lab.journal_orphan_files_api') }}">
+        <div class="battery-panel-head">
+          <div>
+            <h2 style="font-size:1.25em;">고아 파일 <span class="battery-pill" data-role="orphan-count">…</span></h2>
+            <div class="battery-muted">실험일지 어느 행에도 매칭되지 않은 데이터 파일입니다. 파일명·경로·생성일을 확인하고 매칭 검토에서 정리하세요.</div>
+          </div>
+          <button class="battery-btn" type="button" data-role="orphan-reload">새로고침</button>
+        </div>
+        <div class="battery-match-message" data-role="orphan-message">불러오는 중...</div>
+        <div class="battery-match-scroll" data-role="orphan-table" style="max-height:360px;"></div>
       </section>
 
       <section class="battery-panel battery-path-status">
@@ -2003,6 +2018,58 @@
     panel.querySelector('[data-role="dry-run"]').addEventListener("click", () => smoke(false).catch((error) => setOutput(error.message)));
     panel.querySelector('[data-role="api-smoke"]').addEventListener("click", () => smoke(true).catch((error) => setOutput(error.message)));
     loadStatus().catch((error) => setOutput(error.message));
+  })();
+</script>
+
+<script>
+  // Orphan files table (below the journal): data files matched to no journal row.
+  (() => {
+    const panel = document.querySelector(".battery-orphan-files");
+    if (!panel) return;
+    const url = panel.dataset.orphanUrl;
+    const countEl = panel.querySelector('[data-role="orphan-count"]');
+    const messageEl = panel.querySelector('[data-role="orphan-message"]');
+    const tableEl = panel.querySelector('[data-role="orphan-table"]');
+    const reloadEl = panel.querySelector('[data-role="orphan-reload"]');
+
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    async function load() {
+      messageEl.textContent = "불러오는 중...";
+      tableEl.innerHTML = "";
+      try {
+        const response = await fetch(url, { headers: { Accept: "application/json" } });
+        const payload = await response.json();
+        const files = payload.files || [];
+        countEl.textContent = `${payload.count || 0}개`;
+        if (payload.error) messageEl.textContent = `오류: ${payload.error}`;
+        else messageEl.textContent = `EIS ${payload.eis_count || 0} · Capacity ${payload.capacity_count || 0} · 총 ${payload.count || 0}개`;
+        if (!files.length) {
+          tableEl.innerHTML = '<div class="battery-empty">행에 매칭되지 않은 고아 파일이 없습니다.</div>';
+          return;
+        }
+        tableEl.innerHTML = `
+          <table class="battery-match-table">
+            <thead><tr><th>종류</th><th>파일명</th><th>경로</th><th>상태</th><th>생성일</th></tr></thead>
+            <tbody>${files.map((f) => `
+              <tr>
+                <td>${esc(f.kind)}</td>
+                <td>${esc(f.name)}</td>
+                <td style="color:#647084">${esc(f.rel_path)}</td>
+                <td>${esc(f.status)}</td>
+                <td style="white-space:nowrap">${esc(f.created)}</td>
+              </tr>`).join("")}</tbody>
+          </table>`;
+      } catch (error) {
+        messageEl.textContent = `오류: ${error.message}`;
+        countEl.textContent = "?";
+      }
+    }
+
+    if (reloadEl) reloadEl.addEventListener("click", () => load());
+    load();
   })();
 </script>
 {% endblock content %}

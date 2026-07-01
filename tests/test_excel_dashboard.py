@@ -106,7 +106,7 @@ class ExcelDashboardTests(unittest.TestCase):
         self.assertEqual(payload["extraStartRow"], 9)
         self.assertEqual([row["index"] for row in payload["rows"]], [1, 6, 7, 8, 9, 10])
 
-    def test_filtered_extra_rows_continue_after_last_visible_row_with_template_style(self):
+    def test_filtered_extra_rows_start_after_last_populated_row_not_hidden_data(self):
         workbook = Workbook()
         worksheet = workbook.active
         worksheet.title = "JYJ"
@@ -121,13 +121,16 @@ class ExcelDashboardTests(unittest.TestCase):
         payload = build_sheet_payload(worksheet, Path("conditions.xlsx"), include_ignored=False, extra_rows=2)
 
         self.assertEqual(payload["sourceMaxRow"], 5)
-        self.assertEqual(payload["extraStartRow"], 4)
-        self.assertEqual(payload["maxRow"], 5)
-        self.assertEqual([row["index"] for row in payload["rows"]], [1, 2, 3, 4, 5])
+        # Ignored ZIB rows 4-5 hold real data but are filtered out; blank editable
+        # rows must begin AFTER the last populated row (5) so they never overdraw
+        # the hidden data. Rows 4-5 are not rendered in hide mode.
+        self.assertEqual(payload["extraStartRow"], 6)
+        self.assertEqual(payload["maxRow"], 7)
+        self.assertEqual([row["index"] for row in payload["rows"]], [1, 2, 3, 6, 7])
         self.assertFalse(payload["rows"][2]["extra"])
         self.assertTrue(payload["rows"][3]["extra"])
         self.assertEqual(payload["rows"][3]["height"], 33)
-        self.assertEqual(payload["rows"][3]["cells"][0]["address"], "A4")
+        self.assertEqual(payload["rows"][3]["cells"][0]["address"], "A6")
         self.assertEqual(payload["rows"][3]["cells"][0]["value"], "")
         self.assertEqual(payload["rows"][3]["cells"][0]["style"]["backgroundColor"], "#D9EAD3")
 
@@ -143,8 +146,12 @@ class ExcelDashboardTests(unittest.TestCase):
         worksheet.append(["matched-2", "12파이_Cu foil", "1.0M LiPF6 EC/DEC 1:1", "LIB", "2wt% cmc", "0.01~2V"])
         after = build_sheet_payload(worksheet, Path("conditions.xlsx"), include_ignored=False, extra_rows=2)
 
-        self.assertEqual(before["extraStartRow"], 3)
-        self.assertEqual([row["index"] for row in before["rows"] if row["extra"]], [3, 4])
+        # Before: the trailing ignored ZIB row (3) holds data, so blank editable
+        # rows start after it (4), and row 3 stays hidden rather than overdrawn.
+        self.assertEqual(before["extraStartRow"], 4)
+        self.assertEqual([row["index"] for row in before["rows"] if row["extra"]], [4, 5])
+        self.assertNotIn(3, [row["index"] for row in before["rows"]])
+        # After appending a matched row (4), extra rows recalibrate below it.
         self.assertEqual(after["extraStartRow"], 5)
         self.assertEqual([row["index"] for row in after["rows"] if row["extra"]], [5, 6])
         self.assertFalse([row for row in after["rows"] if row["index"] == 4][0]["extra"])

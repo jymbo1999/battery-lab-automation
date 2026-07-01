@@ -208,10 +208,10 @@ class BatteryRouteTests(unittest.TestCase):
             self.assertTrue(full["includeIgnoredRows"])
             self.assertEqual(hidden["filter"]["ignoredRows"], 1)
             self.assertEqual(full["filter"]["ignoredRows"], 1)
-            hidden_row_3 = [row for row in hidden["rows"] if row["index"] == 3]
-            self.assertEqual(len(hidden_row_3), 1)
-            self.assertTrue(hidden_row_3[0]["extra"])
-            self.assertEqual(hidden_row_3[0]["cells"][0]["value"], "")
+            # The ignored row 3 holds data, so it is genuinely omitted in hide mode
+            # (not overdrawn by a blank editable row); blank rows start after it.
+            self.assertNotIn(3, {row["index"] for row in hidden["rows"]})
+            self.assertGreaterEqual(hidden["extraStartRow"], 4)
             self.assertIn(3, {row["index"] for row in full["rows"]})
 
     def test_import_metadata_options_api_reads_existing_conditions(self):
