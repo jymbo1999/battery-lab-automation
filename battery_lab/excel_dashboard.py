@@ -605,7 +605,12 @@ def excel_width_to_px(width: float | None) -> int:
     return max(24, round(float(width) * 7 + 5))
 
 
-def render_page(sheet_api_url: str = "/api/sheet", cell_api_url: str = "/api/cell") -> str:
+def render_page(
+    sheet_api_url: str = "/api/sheet",
+    cell_api_url: str = "/api/cell",
+    row_types_api_url: str = "",
+    row_detail_api_url: str = "",
+) -> str:
     page = """<!doctype html>
 <html lang="ko">
 <head>
@@ -783,6 +788,78 @@ def render_page(sheet_api_url: str = "/api/sheet", cell_api_url: str = "/api/cel
       background: #e5e7eb !important;
       color: #6b7280 !important;
     }
+    tbody th.row-head-cell { cursor: pointer; }
+    tbody th.row-head-cell:hover { background: #eaeef2; color: #1a73e8; }
+    tbody th.row-head-cell.row-no-data {
+      background: #9ca3af;
+      color: #1f2937;
+    }
+    tbody th.row-head-cell.row-no-data:hover { background: #8b919b; color: #111827; }
+    tbody th.row-head-cell.row-active {
+      background: #dbeafe;
+      color: #1d4ed8;
+      box-shadow: inset 0 0 0 2px #2563eb;
+    }
+    tbody th.row-head-cell.row-no-data.row-active { background: #93a3c9; }
+    tbody tr.row-selected td { background: #eef4ff; }
+    .row-popup-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.45);
+      display: none;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 28px 16px;
+      overflow: auto;
+      z-index: 50;
+    }
+    .row-popup-backdrop.open { display: flex; }
+    .row-popup {
+      width: min(1040px, 100%);
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 18px 48px rgba(15, 23, 42, 0.28);
+      overflow: hidden;
+    }
+    .row-popup-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 18px;
+      border-bottom: 1px solid #e5e9f0;
+    }
+    .row-popup-head h2 { margin: 0; font-size: 16px; }
+    .row-popup-head .sub { color: #6b7280; font-size: 12px; margin-top: 2px; }
+    .row-popup-close {
+      width: 32px; height: 32px; border: none; border-radius: 7px;
+      background: #eef1f5; color: #374151; font-size: 19px; line-height: 1; cursor: pointer;
+    }
+    .row-popup-close:hover { background: #e2e8f0; }
+    .row-popup-body { padding: 16px 18px; max-height: calc(100vh - 160px); overflow: auto; }
+    .rp-section-title { font-size: 13px; font-weight: 700; color: #334155; margin: 6px 0 8px; }
+    .rp-preview { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; margin-bottom: 14px; }
+    .rp-box { border: 1px solid #d8dee8; border-radius: 10px; background: #fff; padding: 10px; overflow: hidden; }
+    .rp-box-head { display: flex; align-items: center; gap: 8px; justify-content: space-between; margin-bottom: 6px; }
+    .rp-chip { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: #eef2f7; color: #475569; }
+    .rp-frame { width: 100%; height: 420px; border: 1px solid #e5e9f0; border-radius: 6px; background: #fff; }
+    .rp-info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+    .rp-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #475569; }
+    .rp-field input { min-height: 32px; border: 1px solid #a8b3c2; border-radius: 7px; padding: 5px 8px; font-size: 13px; }
+    .rp-field input:disabled { background: #f1f5f9; color: #94a3b8; }
+    .rp-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; align-items: center; }
+    .rp-btn { display: inline-flex; align-items: center; min-height: 34px; border: 1px solid #a8b3c2; border-radius: 7px; padding: 6px 12px; background: #fff; color: #1f2937; font-size: 13px; cursor: pointer; }
+    .rp-btn.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+    .rp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .rp-msg { font-size: 12px; color: #475569; margin-left: auto; }
+    .rp-empty { color: #647084; padding: 18px; background: #f8fafc; border: 1px dashed #bdc7d5; border-radius: 8px; font-size: 13px; }
+    .rp-replace { border: 1px solid #fed7aa; background: #fff7ed; border-radius: 10px; padding: 12px; margin-bottom: 16px; }
+    .rp-replace .rp-section-title { margin-top: 0; }
+    .rp-replace-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .rp-replace-select { flex: 1 1 220px; min-height: 34px; border: 1px solid #a8b3c2; border-radius: 7px; background: #fff; padding: 5px 8px; font-size: 12px; }
+    .rp-replace-input { flex: 1 1 200px; font-size: 12px; }
+    .rp-replace-raw { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: #475569; white-space: nowrap; }
+    .rp-replace-msg { font-size: 12px; color: #9a3412; margin-top: 8px; min-height: 16px; }
     .hidden { display: none; }
   </style>
 </head>
@@ -813,9 +890,38 @@ def render_page(sheet_api_url: str = "/api/sheet", cell_api_url: str = "/api/cel
     필터 기준: 참고=12파이_Cu foil · 전해질=1.0M LiPF6 EC/DEC 1:1 · 종류=LIB · Binder=2wt% cmc 또는 2wt%cmc/40wt%SBR · Voltage range=0.01~2V
   </div>
   <div class="sheet-wrap" id="sheet"></div>
+  <div class="row-popup-backdrop" id="rowPopup">
+    <div class="row-popup" role="dialog" aria-modal="true">
+      <div class="row-popup-head">
+        <div>
+          <h2 id="rowPopupTitle">행 미리보기</h2>
+          <div class="sub" id="rowPopupSub"></div>
+        </div>
+        <button type="button" class="row-popup-close" id="rowPopupClose" aria-label="닫기">&times;</button>
+      </div>
+      <div class="row-popup-body" id="rowPopupBody"></div>
+    </div>
+  </div>
   <script>
-    const api = { sheet: __SHEET_API_URL__, cell: __CELL_API_URL__ };
-    const state = { data: null, filterMode: 'hide', zoom: 0.55, didInitialScroll: false, selection: null, dragging: false, fullDataLoaded: false, loadingFilteredRows: false };
+    const api = {
+      sheet: __SHEET_API_URL__,
+      cell: __CELL_API_URL__,
+      rowTypes: __ROW_TYPES_API_URL__,
+      rowDetail: __ROW_DETAIL_API_URL__,
+    };
+    const TYPE_LABELS = {
+      eis: 'EIS',
+      eis_time_series: 'EIS time series',
+      eis_comparison: 'EIS',
+      type_1_0p1c_continuous: 'capacity 1',
+      type_2_0p5c_after_stabilization: 'capacity 2',
+      type_3_rate_performance: 'capacity 3',
+      capacity_1: 'capacity 1',
+      capacity_2: 'capacity 2',
+      capacity_3: 'capacity 3',
+      capacity: 'capacity',
+    };
+    const state = { data: null, filterMode: 'hide', zoom: 0.55, didInitialScroll: false, selection: null, dragging: false, fullDataLoaded: false, loadingFilteredRows: false, selectedRowIndex: null, rowTypes: {}, orphanRows: new Set() };
     const statusEl = document.getElementById('status');
     const titleEl = document.getElementById('title');
     const metaEl = document.getElementById('meta');
@@ -1002,6 +1108,13 @@ def render_page(sheet_api_url: str = "/api/sheet", cell_api_url: str = "/api/cel
         if (row.ignored && state.filterMode === 'gray') tr.classList.add('ignored');
         const rowLabel = document.createElement('th');
         rowLabel.textContent = row.index;
+        if (row.index !== 1) {
+          rowLabel.classList.add('row-head-cell');
+          rowLabel.dataset.rowIndex = row.index;
+          applyRowTooltip(rowLabel, row.index);
+          rowLabel.addEventListener('click', () => handleRowHeadClick(row.index));
+          rowLabel.addEventListener('dblclick', event => { event.preventDefault(); openRowPopup(row.index); });
+        }
         tr.appendChild(rowLabel);
         row.cells.forEach(cell => {
           const td = document.createElement('td');
@@ -1024,6 +1137,7 @@ def render_page(sheet_api_url: str = "/api/sheet", cell_api_url: str = "/api/cel
             if (event.button !== 0) return;
             event.preventDefault();
             state.dragging = true;
+            state.selectedRowIndex = null;
             selectCells(cell.row, cell.column, cell.row, cell.column);
             td.focus({ preventScroll: true });
           });
@@ -1052,7 +1166,64 @@ def render_page(sheet_api_url: str = "/api/sheet", cell_api_url: str = "/api/cel
 
     function clearSelection() {
       state.selection = null;
+      state.selectedRowIndex = null;
       applySelection();
+    }
+
+    function selectWholeRow(rowIndex) {
+      const maxColumn = Number(state.data?.maxColumn || 1);
+      state.selectedRowIndex = rowIndex;
+      selectCells(rowIndex, 1, rowIndex, maxColumn);
+    }
+
+    function handleRowHeadClick(rowIndex) {
+      // Second click on an already-selected row opens the detail popup.
+      if (state.selectedRowIndex === rowIndex) {
+        openRowPopup(rowIndex);
+        return;
+      }
+      selectWholeRow(rowIndex);
+    }
+
+    function applyRowHeadState() {
+      sheetEl.querySelectorAll('tbody tr').forEach(tr => {
+        const head = tr.querySelector('th.row-head-cell');
+        const isActive = head && Number(head.dataset.rowIndex) === state.selectedRowIndex;
+        tr.classList.toggle('row-selected', Boolean(isActive));
+        if (head) head.classList.toggle('row-active', Boolean(isActive));
+      });
+    }
+
+    function typeLabelsForRow(rowIndex) {
+      const types = state.rowTypes[rowIndex] || state.rowTypes[String(rowIndex)] || [];
+      return types.map(t => TYPE_LABELS[t] || t);
+    }
+
+    function applyRowTooltip(rowLabel, rowIndex) {
+      const labels = typeLabelsForRow(rowIndex);
+      const isOrphan = state.orphanRows.has(rowIndex);
+      rowLabel.title = labels.length
+        ? `데이터 유형: ${labels.join(', ')}`
+        : (isOrphan ? '데이터 파일 없음' : '데이터 정보를 불러오는 중...');
+      rowLabel.classList.toggle('row-no-data', isOrphan && !labels.length);
+    }
+
+    function refreshRowTooltips() {
+      sheetEl.querySelectorAll('th.row-head-cell').forEach(head => {
+        applyRowTooltip(head, Number(head.dataset.rowIndex));
+      });
+    }
+
+    async function loadRowTypes() {
+      if (!api.rowTypes) return;
+      try {
+        const response = await fetch(api.rowTypes, { headers: { Accept: 'application/json' } });
+        if (!response.ok) return;
+        const payload = await response.json();
+        state.rowTypes = (payload && payload.row_types) || {};
+        state.orphanRows = new Set(((payload && payload.orphan_rows) || []).map(Number));
+        refreshRowTooltips();
+      } catch (error) { /* tooltip is best-effort */ }
     }
 
     function selectionBounds() {
@@ -1074,6 +1245,7 @@ def render_page(sheet_api_url: str = "/api/sheet", cell_api_url: str = "/api/cel
         td.classList.toggle('selected-cell', Boolean(selected));
         td.classList.toggle('selection-anchor', Boolean(state.selection && row === state.selection.anchorRow && column === state.selection.anchorColumn));
       });
+      applyRowHeadState();
     }
 
     function selectedCellMatrix() {
@@ -1118,7 +1290,185 @@ def render_page(sheet_api_url: str = "/api/sheet", cell_api_url: str = "/api/cel
       Object.entries(border).forEach(([side, value]) => { td.style[`border${side[0].toUpperCase()}${side.slice(1)}`] = value; });
     }
 
-    loadSheet(false, { fastView: true }).catch(error => {
+    const popupEl = document.getElementById('rowPopup');
+    const popupTitleEl = document.getElementById('rowPopupTitle');
+    const popupSubEl = document.getElementById('rowPopupSub');
+    const popupBodyEl = document.getElementById('rowPopupBody');
+    const popupCloseEl = document.getElementById('rowPopupClose');
+    let popupRow = null;
+
+    function closeRowPopup() {
+      popupEl.classList.remove('open');
+      popupBodyEl.innerHTML = '';
+      popupRow = null;
+    }
+    popupCloseEl.addEventListener('click', closeRowPopup);
+    popupEl.addEventListener('click', event => { if (event.target === popupEl) closeRowPopup(); });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && popupEl.classList.contains('open')) closeRowPopup(); });
+
+    async function openRowPopup(rowIndex) {
+      popupRow = rowIndex;
+      popupTitleEl.textContent = `행 ${rowIndex} · 데이터 미리보기 & 실험정보`;
+      const labels = typeLabelsForRow(rowIndex);
+      popupSubEl.textContent = labels.length ? `데이터 유형: ${labels.join(', ')}` : '등록된 데이터 유형 확인 중...';
+      popupBodyEl.innerHTML = '<div class="rp-empty">불러오는 중...</div>';
+      popupEl.classList.add('open');
+      if (!api.rowDetail) {
+        popupBodyEl.innerHTML = '<div class="rp-empty">상세 보기 API가 구성되지 않았습니다.</div>';
+        return;
+      }
+      try {
+        const url = `${api.rowDetail}${api.rowDetail.includes('?') ? '&' : '?'}row=${encodeURIComponent(rowIndex)}`;
+        const response = await fetch(url, { headers: { Accept: 'application/json' } });
+        const payload = await response.json();
+        if (!response.ok || payload.error) throw new Error(payload.error || '행 정보를 불러오지 못했습니다.');
+        renderRowPopup(payload);
+      } catch (error) {
+        popupBodyEl.innerHTML = `<div class="rp-empty">${escapeText(error.message)}</div>`;
+      }
+    }
+
+    function escapeText(value) {
+      const div = document.createElement('div');
+      div.textContent = String(value ?? '');
+      return div.innerHTML;
+    }
+
+    function renderRowPopup(payload) {
+      if (popupRow !== payload.row) return;
+      const labels = (payload.types || []).map(t => TYPE_LABELS[t] || t);
+      popupSubEl.textContent = labels.length ? `데이터 유형: ${labels.join(', ')}` : '이 행에 매칭된 데이터 파일이 없습니다.';
+
+      const previews = payload.previews || [];
+
+      // --- Replace section (top): pick which linked file to swap, upload, recompute. ---
+      const replaceHtml = (payload.replace_url && previews.length)
+        ? `<div class="rp-replace">
+            <div class="rp-section-title">데이터 파일 교체 <span style="font-weight:400;color:#94a3b8;font-size:11px">— 새 파일로 덮어쓰고(.bak 백업) 지표·클러스터를 완전히 재계산합니다. 실험정보는 그대로 유지됩니다.</span></div>
+            <div class="rp-replace-row">
+              <select class="rp-replace-select" data-role="replace-target">
+                ${previews.map(p => `<option value="${escapeText(p.file)}" data-kind="${escapeText(p.kind || '')}">${escapeText((TYPE_LABELS[p.type] || p.type || '') + ' · ' + (p.title || p.file))}</option>`).join('')}
+              </select>
+              <input type="file" class="rp-replace-input" data-role="replace-input" accept=".sde,.seo,.wrd,.csv,.xlsx,.xls">
+              <label class="rp-replace-raw" title="WRD 교체 시 원시 time-series CSV도 생성"><input type="checkbox" data-role="replace-write-raw"> 원시 CSV도</label>
+              <button type="button" class="rp-btn primary" data-role="do-replace">교체 & 재계산</button>
+            </div>
+            <div class="rp-replace-msg" data-role="replace-msg"></div>
+          </div>`
+        : (previews.length ? '' : '<div class="rp-empty">이 행에 연결된 데이터 파일이 없어 교체할 대상이 없습니다.</div>');
+
+      const previewHtml = previews.length
+        ? `<div class="rp-preview">${previews.map((p, i) => `
+            <div class="rp-box">
+              <div class="rp-box-head">
+                <strong style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeText(p.title || p.file || '미리보기')}</strong>
+                <span class="rp-chip">${escapeText(TYPE_LABELS[p.type] || p.type || '')}</span>
+              </div>
+              ${p.available === false
+                ? `<div class="rp-empty">${escapeText((p.errors && p.errors[0]) || '미리보기를 만들 수 없습니다.')}</div>`
+                : `<iframe class="rp-frame" data-preview-index="${i}" sandbox="allow-scripts" title="${escapeText(p.title || 'preview')}"></iframe>`}
+            </div>`).join('')}</div>`
+        : '<div class="rp-empty">이 행에 연결된 데이터 파일이 없습니다.</div>';
+
+      const fields = payload.info_fields || [];
+      const infoHtml = fields.length
+        ? `<div class="rp-info-grid">${fields.map(f => `
+            <label class="rp-field">
+              ${escapeText(f.header || f.letter)}
+              <input type="text" data-row="${f.row}" data-column="${f.column}" data-original="${escapeText(f.value ?? '')}" value="${escapeText(f.value ?? '')}" ${f.editable === false ? 'disabled' : ''}>
+            </label>`).join('')}</div>`
+        : '<div class="rp-empty">표시할 실험정보 칸이 없습니다.</div>';
+
+      popupBodyEl.innerHTML = `
+        ${replaceHtml}
+        <div class="rp-section-title">미리보기</div>
+        ${previewHtml}
+        <div class="rp-section-title">실험정보 <span style="font-weight:400;color:#94a3b8;font-size:11px">— 값을 고치고 ‘수정내용 저장하기’를 누르면 실험일지에 반영됩니다.</span></div>
+        ${infoHtml}
+        <div class="rp-actions">
+          <button type="button" class="rp-btn primary" data-role="save-info" ${fields.length ? '' : 'disabled'}>수정내용 저장하기</button>
+          <span class="rp-msg" data-role="rp-msg"></span>
+        </div>`;
+
+      previews.forEach((p, i) => {
+        if (p.available === false || !p.html) return;
+        const frame = popupBodyEl.querySelector(`iframe[data-preview-index="${i}"]`);
+        if (frame) frame.srcdoc = p.html;
+      });
+
+      const msgEl = popupBodyEl.querySelector('[data-role="rp-msg"]');
+      const saveBtn = popupBodyEl.querySelector('[data-role="save-info"]');
+      if (saveBtn) saveBtn.addEventListener('click', () => saveRowInfo(payload.row, msgEl));
+      const replaceBtn = popupBodyEl.querySelector('[data-role="do-replace"]');
+      if (replaceBtn) replaceBtn.addEventListener('click', () => replaceRowFile(payload));
+    }
+
+    async function saveRowInfo(rowIndex, msgEl) {
+      const inputs = Array.from(popupBodyEl.querySelectorAll('.rp-info-grid input:not(:disabled)'));
+      const changed = inputs.filter(input => input.value !== (input.dataset.original ?? ''));
+      if (!changed.length) {
+        if (msgEl) msgEl.textContent = '변경된 칸이 없습니다.';
+        return;
+      }
+      if (msgEl) msgEl.textContent = '저장 중...';
+      let failures = 0;
+      for (const input of changed) {
+        try {
+          const response = await fetch(api.cell, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ row: Number(input.dataset.row), column: Number(input.dataset.column), value: input.value }),
+          });
+          const payload = await response.json();
+          if (!response.ok || !payload.ok) throw new Error(payload.error || 'save failed');
+          input.dataset.original = input.value;
+        } catch (error) { failures += 1; }
+      }
+      if (msgEl) msgEl.textContent = failures ? `${changed.length - failures}칸 저장, ${failures}칸 실패` : `${changed.length}칸 저장 완료`;
+      // Reload the underlying sheet so formula columns reflect the new values.
+      loadSheet(state.filterMode !== 'hide', { preserveScroll: true }).catch(() => {});
+    }
+
+    async function replaceRowFile(payload) {
+      const select = popupBodyEl.querySelector('[data-role="replace-target"]');
+      const fileInput = popupBodyEl.querySelector('[data-role="replace-input"]');
+      const writeRaw = popupBodyEl.querySelector('[data-role="replace-write-raw"]');
+      const msgEl = popupBodyEl.querySelector('[data-role="replace-msg"]');
+      const button = popupBodyEl.querySelector('[data-role="do-replace"]');
+      if (!select || !fileInput || !fileInput.files || !fileInput.files.length) {
+        if (msgEl) msgEl.textContent = '교체할 새 파일을 선택하세요.';
+        return;
+      }
+      const target = select.value;
+      const kind = select.selectedOptions[0]?.dataset.kind || '';
+      if (!window.confirm(`선택한 파일을 새 파일로 교체하고 지표·클러스터를 재계산합니다.\n기존 파일은 .bak로 백업됩니다.\n\n대상: ${target}\n\n진행할까요?`)) return;
+      const form = new FormData();
+      form.append('row', String(payload.row));
+      form.append('kind', kind);
+      form.append('target', target);
+      form.append('file', fileInput.files[0]);
+      if (writeRaw && writeRaw.checked) form.append('write_raw', '1');
+      if (button) button.disabled = true;
+      if (msgEl) msgEl.textContent = '교체 및 재계산 중... (수십 초 걸릴 수 있습니다)';
+      try {
+        const response = await fetch(payload.replace_url, { method: 'POST', body: form });
+        const result = await response.json();
+        if (!response.ok || result.ok === false) throw new Error(result.error || '교체에 실패했습니다.');
+        const failed = (result.recompute || []).filter(r => r.ok === false);
+        if (msgEl) msgEl.textContent = failed.length
+          ? `교체 완료 · 재계산 일부 실패: ${failed.map(f => f.kind).join(', ')}`
+          : `교체 & 재계산 완료 → ${result.new_rel_path}`;
+        // Refresh tooltips/types and re-open the row to show the new preview.
+        await loadRowTypes();
+        loadSheet(state.filterMode !== 'hide', { preserveScroll: true }).catch(() => {});
+        openRowPopup(payload.row);
+      } catch (error) {
+        if (msgEl) msgEl.textContent = `오류: ${error.message}`;
+        if (button) button.disabled = false;
+      }
+    }
+
+    loadSheet(false, { fastView: true }).then(() => loadRowTypes()).catch(error => {
       sheetEl.textContent = error.message;
       setStatus('Error');
     });
@@ -1126,4 +1476,9 @@ def render_page(sheet_api_url: str = "/api/sheet", cell_api_url: str = "/api/cel
 </body>
 </html>
 """
-    return page.replace("__SHEET_API_URL__", json.dumps(sheet_api_url)).replace("__CELL_API_URL__", json.dumps(cell_api_url))
+    return (
+        page.replace("__SHEET_API_URL__", json.dumps(sheet_api_url))
+        .replace("__CELL_API_URL__", json.dumps(cell_api_url))
+        .replace("__ROW_TYPES_API_URL__", json.dumps(row_types_api_url))
+        .replace("__ROW_DETAIL_API_URL__", json.dumps(row_detail_api_url))
+    )

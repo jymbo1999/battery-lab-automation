@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 import hashlib
 import os
 import shutil
@@ -38,6 +39,7 @@ from .experiment_import import (
     metadata_options_from_conditions,
     preview_normalized_names,
     remove_import_draft_file,
+    replace_journal_row_file,
     update_import_draft_assignments,
     update_import_draft_metadata,
 )
@@ -55,10 +57,13 @@ from .viewer_service import (
     capacity_overlay_payload,
     capacity_source_payload,
     capacity_viewer_options,
+    clear_match_report_cache,
     draft_overlay_payload,
     eis_overlay_payload,
     eis_viewer_options,
     finder_html,
+    journal_row_detail_payload,
+    journal_row_types_payload,
 )
 
 
@@ -520,8 +525,133 @@ def journal_excel():
     html = render_excel_dashboard_page(
         sheet_api_url=url_for("battery_lab.journal_sheet_api"),
         cell_api_url=url_for("battery_lab.journal_cell_api"),
+        row_types_api_url=url_for("battery_lab.journal_row_types_api"),
+        row_detail_api_url=url_for("battery_lab.journal_row_detail_api"),
     )
     return Response(html, mimetype="text/html")
+
+
+@blueprint.route("/api/journal/row-types", methods=["GET"])
+def journal_row_types_api():
+    """Map journal row number -> data types (EIS / EIS time series / capacity 1-3).
+
+    Feeds the row-number hover tooltip in the journal viewer. Best-effort: returns
+    an empty map instead of erroring so a missing root never breaks the journal.
+    """
+    try:
+        return jsonify(
+            journal_row_types_payload(
+                BATTERY_EIS_ROOT,
+                BATTERY_CAPACITY_ROOT,
+                BATTERY_CONDITION_WORKBOOK,
+                BATTERY_MATCH_EIS_JSON,
+                BATTERY_MATCH_CAPACITY_JSON,
+            )
+        )
+    except Exception as exc:
+        return jsonify({"available": False, "row_types": {}, "error": str(exc)})
+
+
+def _journal_row_info_fields(row_number: int) -> list[dict[str, Any]]:
+    """Header-labelled, editable cell list for one journal row (for the detail popup)."""
+    payload = _journal_store().sheet_payload(include_ignored=True, extra_rows=0)
+    headers: dict[int, str] = {}
+    target_cells: list[dict[str, Any]] = []
+    for row in payload.get("rows", []):
+        if row.get("index") == 1:
+            for cell in row.get("cells", []):
+                text = str(cell.get("value") or "").strip()
+                if text:
+                    headers[int(cell["column"])] = text
+        if row.get("index") == row_number:
+            target_cells = row.get("cells", [])
+    fields: list[dict[str, Any]] = []
+    for cell in target_cells:
+        column = int(cell["column"])
+        header = headers.get(column)
+        if not header:
+            continue
+        fields.append(
+            {
+                "row": int(cell["row"]),
+                "column": column,
+                "letter": cell.get("letter") or "",
+                "header": header,
+                "value": cell.get("value"),
+                "editable": not bool(cell.get("formulaCell")),
+            }
+        )
+    return fields
+
+
+@blueprint.route("/api/journal/row-detail", methods=["GET"])
+def journal_row_detail_api():
+    """Preview + editable experiment-info for one journal row (detail popup)."""
+    try:
+        row_number = int(request.args.get("row", ""))
+    except (TypeError, ValueError):
+        return jsonify({"error": "row must be a number"}), 400
+    try:
+        detail = journal_row_detail_payload(
+            BATTERY_EIS_ROOT,
+            BATTERY_CAPACITY_ROOT,
+            BATTERY_CONDITION_WORKBOOK,
+            BATTERY_MATCH_EIS_JSON,
+            BATTERY_MATCH_CAPACITY_JSON,
+            row=row_number,
+        )
+        detail["info_fields"] = _journal_row_info_fields(row_number)
+        detail["replace_url"] = url_for("battery_lab.journal_row_replace_file_api")
+        return jsonify(detail)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@blueprint.route("/api/journal/row-replace-file", methods=["POST"])
+def journal_row_replace_file_api():
+    """Replace one data file linked to a journal row, then fully recompute.
+
+    multipart/form-data: row, kind (eis|capacity), target (existing rel path),
+    write_raw (optional), file (the new raw upload). Backs up the old file(s),
+    drops in the new one, and re-derives metrics + match/cluster assignment.
+    """
+    try:
+        row_number = int(request.form.get("row", ""))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "row must be a number"}), 400
+    kind = str(request.form.get("kind") or "").strip()
+    target = str(request.form.get("target") or "").strip()
+    if kind not in {"eis", "capacity"}:
+        return jsonify({"ok": False, "error": "kind must be 'eis' or 'capacity'"}), 400
+    if not target:
+        return jsonify({"ok": False, "error": "교체할 대상 파일이 지정되지 않았습니다."}), 400
+    uploaded = request.files.get("file")
+    if uploaded is None or not (uploaded.filename or "").strip():
+        return jsonify({"ok": False, "error": "새 데이터 파일을 첨부하세요."}), 400
+    write_raw = str(request.form.get("write_raw") or "").strip() in {"1", "true", "on"}
+    try:
+        result = replace_journal_row_file(
+            output_root=BATTERY_OUTPUT_ROOT,
+            eis_root=BATTERY_EIS_ROOT,
+            capacity_root=BATTERY_CAPACITY_ROOT,
+            condition_workbook=BATTERY_CONDITION_WORKBOOK,
+            condition_sheet=DEFAULT_CONDITION_SHEET,
+            eis_match_override_path=BATTERY_MATCH_EIS_JSON,
+            capacity_match_override_path=BATTERY_MATCH_CAPACITY_JSON,
+            journal_row=row_number,
+            target_kind=kind,
+            target_rel_path=target,
+            upload_stream=uploaded.stream,
+            original_filename=uploaded.filename,
+            write_raw_wrd=write_raw,
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    # New file on disk + new overrides invalidate the cached match reports.
+    clear_match_report_cache()
+    return jsonify(result)
 
 
 @blueprint.route("/journal/download", methods=["GET"])

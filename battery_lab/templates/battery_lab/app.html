@@ -588,6 +588,11 @@
             <button type="button" class="biw-addmore" data-role="add-more" hidden>＋ 파일 추가</button>
             <div class="battery-import-options">
               <label><input type="checkbox" data-role="write-raw" value="1"> WRD raw time-series CSV도 생성</label>
+              <div class="battery-muted" style="font-size:11px;line-height:1.5;margin-top:4px;flex-basis:100%">
+                WRD는 항상 <code>_capacity_summary.csv</code>(사이클축 — Cycle별 충·방전 용량/CE, 용량곡선·KPI용)로 변환됩니다.
+                이 옵션을 켜면 추가로 <code>_raw_timeseries.csv</code>(원시 — 측정 레코드별 시간·전압·전류·누적용량, 전압 프로파일/디버깅용, 용량이 큼)도 함께 만듭니다.
+                평소 분석에는 불필요하고, 원시 파형을 직접 보고 싶을 때만 켜세요.
+              </div>
             </div>
             <div class="biw-hr-note">⚠ <b>EIS 시계열</b> 데이터는 파일명에 <code>_hr</code> 표기를 반드시 포함해 주세요 (예: <code>..._3hr_02.SEO</code>). 시계열은 같은 셀의 여러 시점이 한 행으로 묶입니다.</div>
             <div class="battery-match-message" data-role="upload-message">원본 파일을 올리면 파서·지표·미리보기를 만들고 타입을 자동 분류합니다. 각 파일 오른쪽에서 타입을 바꾸거나 ×로 삭제할 수 있습니다.</div>
@@ -1137,15 +1142,22 @@
       });
     }
 
+    // Individual source-graph view modes: list newest first (reverse the
+    // default oldest→newest order so the most recent file is on top).
+    const NEWEST_FIRST_MODES = new Set(["source", "raw_source"]);
+    function newestFirst(mode, options) {
+      return NEWEST_FIRST_MODES.has(mode) ? options.slice().reverse() : options;
+    }
+
     function optionsForMode(viewer, mode) {
       const payload = viewer.__viewerPayload || {};
       if (viewer.dataset.kind === "eis") {
-        if (mode === "source") return payload.source_options || [];
+        if (mode === "source") return newestFirst(mode, payload.source_options || []);
         if (mode === "time_series") return payload.time_series_options || [];
         return payload.comparison_options || [];
       }
-      if (mode === "raw_source") return payload.source_options || [];
-      if (mode === "source") return payload.summary_options || [];
+      if (mode === "raw_source") return newestFirst(mode, payload.source_options || []);
+      if (mode === "source") return newestFirst(mode, payload.summary_options || []);
       return (payload.cluster_options || []).filter((option) => option.protocol_type === mode);
     }
 

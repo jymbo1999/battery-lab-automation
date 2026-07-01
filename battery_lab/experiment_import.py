@@ -12,9 +12,12 @@ import uuid
 from dataclasses import asdict, dataclass, fields, replace
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import BinaryIO
 
 from openpyxl import load_workbook
+
+from wonatech_parsers.wrd import mass_g_from_areal_density
 
 from .capacity_matching import write_capacity_match_outputs
 from .conditions import CONDITION_FIELDS, condition_column, find_condition, read_conditions
@@ -1259,3 +1262,172 @@ def unique_filename(filename: str, used_names: set[str]) -> str:
         index += 1
     used_names.add(candidate)
     return candidate
+
+
+def replace_journal_row_file(
+    *,
+    output_root: Path,
+    eis_root: Path,
+    capacity_root: Path,
+    condition_workbook: Path,
+    condition_sheet: str,
+    eis_match_override_path: Path,
+    capacity_match_override_path: Path,
+    journal_row: int,
+    target_kind: str,
+    target_rel_path: str,
+    upload_stream: BinaryIO,
+    original_filename: str,
+    write_raw_wrd: bool = False,
+) -> dict[str, object]:
+    """Replace one data file linked to a journal row with a freshly uploaded file.
+
+    Mirrors the new-experiment registration pipeline but pinned to an *existing*
+    journal row: backs up the old file(s), drops in the new one, then re-derives
+    metrics (Rs/Rct/ICE...), match overrides and the match report so the file is
+    re-clustered exactly as if it had just been registered. The journal row's
+    experiment-info cells are intentionally left untouched.
+    """
+    if target_kind not in {"eis", "capacity"}:
+        raise ValueError(f"Unsupported kind: {target_kind}")
+    root = (capacity_root if target_kind == "capacity" else eis_root).resolve()
+    override_path = capacity_match_override_path if target_kind == "capacity" else eis_match_override_path
+
+    target_abs = (root / target_rel_path).resolve()
+    if root != target_abs and root not in target_abs.parents:
+        raise ValueError("교체 대상 경로가 데이터 루트를 벗어났습니다.")
+    if not target_abs.is_file():
+        raise FileNotFoundError(f"교체할 파일을 찾을 수 없습니다: {target_rel_path}")
+
+    suffix = Path(original_filename).suffix.lower()
+    if suffix not in ALLOWED_IMPORT_SUFFIXES:
+        raise ValueError(f"지원하지 않는 확장자입니다: {suffix or '(없음)'}")
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    work_root = output_root / "row_replace" / f"{journal_row}_{stamp}"
+    raw_dir = work_root / "raw"
+    processed_dir = work_root / "processed"
+    for directory in (raw_dir, processed_dir):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    temp_raw = raw_dir / safe_filename(original_filename)
+    with temp_raw.open("wb") as handle:
+        shutil.copyfileobj(upload_stream, handle)
+
+    conditions = read_conditions(condition_workbook, sheet_name=condition_sheet) if condition_workbook.exists() else {}
+    by_row = {cond.get("_source_row_number"): (key, cond) for key, cond in conditions.items()}
+    condition_key, condition = by_row.get(journal_row, ("", {}))
+    metadata = {"sample": condition.get("sample"), "date": condition.get("date")}
+
+    # Parse + convert (WRD -> capacity summary, with mass_g from the row's areal
+    # density so the summary is already specific capacity mAh/g).
+    mass_g: float | None = None
+    processed_path = ""
+    raw_timeseries_path = ""
+    parse_path = temp_raw
+    if is_wonatech_source(temp_raw):
+        try:
+            mass_g = mass_g_from_areal_density(float(condition.get("areal_mass_density")))
+        except (TypeError, ValueError):
+            mass_g = None
+        conversion = convert_wonatech_file(temp_raw, processed_dir, write_raw_wrd=write_raw_wrd, mass_g=mass_g)
+        parse_path = conversion.primary_csv_path
+        processed_path = str(conversion.primary_csv_path)
+        raw_timeseries_path = str(conversion.raw_csv_path) if conversion.raw_csv_path else ""
+
+    dataset = parse_file(parse_path)
+    record = compute_metrics(dataset)
+    assignment = infer_assignment(
+        dataset.meta.analysis_type, record.metrics, dataset.meta.time_point, temp_raw.name
+    )["suggested_assignment"]
+    new_kind = "capacity" if assignment.startswith("capacity_") else "eis"
+    if new_kind != target_kind:
+        raise ValueError(f"새 파일 유형({new_kind})이 교체 대상 유형({target_kind})과 다릅니다.")
+
+    item = SimpleNamespace(
+        assignment=assignment,
+        cell_id=dataset.meta.cell_id,
+        time_point=dataset.meta.time_point,
+    )
+
+    dest_dir = target_abs.parent
+    backup_dir = output_root / "row_replace_backups" / f"{journal_row}_{stamp}"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+
+    # Retire the old matched file. For capacity the cell's raw .wrd sits in the
+    # same per-cell folder, so retire it too; otherwise the stale raw would keep
+    # showing up in the WRD/raw source list and could regenerate a summary.
+    retired = [target_abs]
+    if target_kind == "capacity":
+        retired += [p for p in dest_dir.glob("*.wrd") if p.is_file()]
+    retired = list(dict.fromkeys(retired))
+    backed_up: list[str] = []
+    for path in retired:
+        if path.is_file():
+            shutil.copy2(path, backup_dir / path.name)
+            path.unlink()
+            backed_up.append(str(path.relative_to(root)))
+
+    # Place the new file(s) using the same naming scheme as registration.
+    raw_target = collision_safe_path(dest_dir / final_filename_for_item(item, metadata, journal_row, temp_raw.suffix))
+    shutil.copy2(temp_raw, raw_target)
+    if target_kind == "capacity" and processed_path:
+        processed_source = Path(processed_path)
+        processed_target = collision_safe_path(dest_dir / f"{raw_target.stem}_{processed_source.name}")
+        shutil.copy2(processed_source, processed_target)
+        matched_path = processed_target
+        if raw_timeseries_path:
+            raw_ts = Path(raw_timeseries_path)
+            shutil.copy2(raw_ts, collision_safe_path(dest_dir / f"{raw_target.stem}_{raw_ts.name}"))
+    else:
+        matched_path = raw_target
+    new_rel = relative_to_root(matched_path, root)
+
+    # Re-pin the match override: drop the old file, bind the new file -> same row.
+    overrides = load_match_overrides(override_path)
+    overrides.pop(target_rel_path, None)
+    overrides[new_rel] = {
+        "condition_key": condition_key or (str(metadata.get("sample") or f"row{journal_row}")),
+        "journal_row": journal_row,
+        "sample": condition.get("sample") or metadata.get("sample") or "",
+        "date": condition.get("date") or metadata.get("date") or "",
+        "selected_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "selection_source": "row_file_replace",
+        "assignment": assignment,
+    }
+    save_match_overrides(override_path, overrides)
+
+    # Recompute metrics + match report (cluster reassignment) like registration.
+    recompute: list[dict[str, object]] = []
+    try:
+        upsert_summary_metrics([record], output_root / "summary_metrics.csv", conditions)
+        recompute.append({"kind": "summary_metrics", "ok": True})
+    except Exception as exc:  # pragma: no cover - defensive
+        recompute.append({"kind": "summary_metrics", "ok": False, "error": str(exc)})
+    try:
+        write_dataset_plot(dataset, output_root)
+    except Exception:  # pragma: no cover - plot is best-effort
+        pass
+    try:
+        if target_kind == "capacity":
+            source_paths = collect_capacity_summary_sources(capacity_root)
+            report = write_capacity_match_outputs(source_paths, conditions, output_root, capacity_root, overrides)
+        else:
+            source_paths = collect_source_files(eis_root, EIS_SUFFIXES)
+            report = write_eis_match_outputs(source_paths, conditions, output_root, eis_root, overrides)
+        recompute.append({"kind": f"{target_kind}_match_outputs", "ok": True, "matches": len(report.matches)})
+    except Exception as exc:
+        recompute.append({"kind": f"{target_kind}_match_outputs", "ok": False, "error": str(exc)})
+
+    return {
+        "ok": True,
+        "row": journal_row,
+        "kind": target_kind,
+        "assignment": assignment,
+        "old_rel_path": target_rel_path,
+        "new_rel_path": new_rel,
+        "backup_dir": str(backup_dir),
+        "backed_up": backed_up,
+        "mass_g": mass_g,
+        "recompute": recompute,
+    }

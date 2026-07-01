@@ -328,6 +328,164 @@ def capacity_source_payload(capacity_root: Path, eis_root: Path, rel_path: str) 
             return {"available": False, "html": "", "errors": [str(exc)], "title": rel_path or "Capacity source", "row_count": 0}
 
 
+# Data types surfaced in the journal row-number tooltip / detail popup. EIS files
+# whose name carries the ``_hr`` time-series marker are split out from plain EIS
+# comparison files; capacity files inherit their cluster's protocol_type when known.
+def _positive_int(value: Any) -> int | None:
+    try:
+        number = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def journal_row_data_index(
+    eis_root: Path,
+    capacity_root: Path,
+    condition_workbook: Path,
+    eis_override_path: Path,
+    capacity_override_path: Path,
+) -> dict[int, list[dict[str, Any]]]:
+    """Map journal row number -> list of registered data files and their type.
+
+    Pure read: reuses the (memoized) match reports, so it is cheap on warm cache
+    and self-invalidating when sources/overrides change. Failures degrade to an
+    empty/partial map rather than raising, since this only feeds tooltips/preview.
+    """
+    from .matching_service import build_match_payload
+
+    index: dict[int, list[dict[str, Any]]] = {}
+
+    def add(row_no: int, entry: dict[str, Any]) -> None:
+        bucket = index.setdefault(row_no, [])
+        if not any(e["rel_path"] == entry["rel_path"] and e["type"] == entry["type"] for e in bucket):
+            bucket.append(entry)
+
+    # EIS files -> rows
+    try:
+        payload = build_match_payload("eis", eis_root, condition_workbook, eis_override_path)
+        for row in payload.get("final_rows", []):
+            if row.get("override_action") == "delete_file":
+                continue
+            row_no = _positive_int(row.get("journal_row"))
+            rel = str(row.get("relative_path") or "")
+            if not row_no or not rel:
+                continue
+            type_ = "eis_time_series" if "_hr" in Path(rel).name.lower() else "eis_comparison"
+            add(row_no, {"rel_path": rel, "kind": "eis", "type": type_})
+    except Exception:
+        pass
+
+    # Capacity protocol classification (rel_path -> protocol_type) for the type label.
+    protocol_by_path: dict[str, str] = {}
+    try:
+        with streamlit_roots(eis_root, capacity_root):
+            _, summary_paths, conditions, report = build_capacity_viewer_report(
+                capacity_root, condition_workbook, capacity_override_path
+            )
+            rel_paths = [str(path.relative_to(capacity_root)) for path in summary_paths]
+            for group in capacity_comparison_path_groups(rel_paths, report, conditions):
+                for rel in group["paths"]:
+                    protocol_by_path[rel] = group["protocol_type"]
+    except Exception:
+        protocol_by_path = {}
+
+    # Capacity files -> rows
+    try:
+        payload = build_match_payload("capacity", capacity_root, condition_workbook, capacity_override_path)
+        for row in payload.get("final_rows", []):
+            if row.get("override_action") == "delete_file":
+                continue
+            row_no = _positive_int(row.get("journal_row"))
+            rel = str(row.get("relative_path") or "")
+            if not row_no or not rel:
+                continue
+            protocol = protocol_by_path.get(rel)
+            type_ = protocol if protocol in CAPACITY_PROTOCOL_ORDER else "capacity"
+            add(row_no, {"rel_path": rel, "kind": "capacity", "type": type_})
+    except Exception:
+        pass
+
+    return index
+
+
+def journal_row_types_payload(
+    eis_root: Path,
+    capacity_root: Path,
+    condition_workbook: Path,
+    eis_override_path: Path,
+    capacity_override_path: Path,
+) -> dict[str, Any]:
+    index = journal_row_data_index(
+        eis_root, capacity_root, condition_workbook, eis_override_path, capacity_override_path
+    )
+    row_types: dict[str, list[str]] = {}
+    for row_no, entries in index.items():
+        seen: list[str] = []
+        for entry in entries:
+            if entry["type"] not in seen:
+                seen.append(entry["type"])
+        row_types[str(row_no)] = seen
+
+    # Orphan rows = real experiment rows in the journal that have no linked data
+    # file ("데이터 파일 없음"). Used to shade their row-number cell darker.
+    orphan_set: set[int] = set()
+    try:
+        conditions = render_cache.cached_read_conditions(condition_workbook)
+        for condition in conditions.values():
+            row_no = _positive_int(condition.get("_source_row_number"))
+            if row_no and row_no not in index:
+                orphan_set.add(row_no)
+    except Exception:
+        orphan_set = set()
+
+    return {"available": True, "row_types": row_types, "orphan_rows": sorted(orphan_set)}
+
+
+def journal_row_detail_payload(
+    eis_root: Path,
+    capacity_root: Path,
+    condition_workbook: Path,
+    eis_override_path: Path,
+    capacity_override_path: Path,
+    *,
+    row: int,
+    max_previews: int = 8,
+) -> dict[str, Any]:
+    index = journal_row_data_index(
+        eis_root, capacity_root, condition_workbook, eis_override_path, capacity_override_path
+    )
+    entries = index.get(row, [])
+    types: list[str] = []
+    for entry in entries:
+        if entry["type"] not in types:
+            types.append(entry["type"])
+
+    previews: list[dict[str, Any]] = []
+    for entry in entries[:max_previews]:
+        rel = entry["rel_path"]
+        try:
+            if entry["kind"] == "eis":
+                payload = eis_source_payload(eis_root, capacity_root, rel)
+            else:
+                payload = capacity_source_payload(capacity_root, eis_root, rel)
+        except Exception as exc:  # pragma: no cover - preview is best-effort
+            payload = {"available": False, "html": "", "errors": [str(exc)], "title": Path(rel).name}
+        previews.append(
+            {
+                "file": rel,
+                "title": payload.get("title") or Path(rel).name,
+                "type": entry["type"],
+                "kind": entry["kind"],
+                "available": payload.get("available", False),
+                "html": payload.get("html", ""),
+                "errors": payload.get("errors", []),
+            }
+        )
+
+    return {"row": row, "types": types, "previews": previews}
+
+
 def capacity_overlay_payload(
     capacity_root: Path,
     eis_root: Path,
@@ -917,7 +1075,8 @@ def source_preview_html(title: str, meta: str, graph_html: str, table_html: str)
     .source-head {{ display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin-bottom: 10px; }}
     h1 {{ margin: 0; font-size: 16px; line-height: 1.25; }}
     .meta {{ color: #647084; font-size: 12px; white-space: nowrap; }}
-    .graph {{ overflow: auto; border: 1px solid #d8dee8; border-radius: 8px; min-height: 120px; display: grid; place-items: center; }}
+    .graph {{ overflow: hidden; border: 1px solid #d8dee8; border-radius: 8px; min-height: 120px; display: grid; place-items: center; padding: 6px; }}
+    .graph svg {{ width: 100%; height: auto; max-height: 100%; display: block; }}
     .table-wrap {{ margin-top: 12px; max-height: 300px; overflow: auto; border: 1px solid #d8dee8; border-radius: 8px; }}
     table {{ width: max-content; min-width: 100%; border-collapse: collapse; font-size: 12px; line-height: 1.25; }}
     th, td {{ border-bottom: 1px solid #e5e9f0; padding: 6px 8px; text-align: left; white-space: nowrap; }}
